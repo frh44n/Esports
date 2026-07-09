@@ -1,0 +1,6 @@
+{
+  "name": "Arena Esports",
+  "description": "A premium platform for organizing BGMI, PUBG, and Free Fire Esports tournaments, containing an integrated Admin Control Panel, simulated Casino, and Wallet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
