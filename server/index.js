@@ -833,6 +833,7 @@ app.get('/api/admin/stats', async (req, res) => {
 });
 // Fetch all transactions (Admin dashboard)
 app.get('/api/admin/transactions', async (req, res) => {
+  try {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
