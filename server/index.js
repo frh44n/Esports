@@ -193,7 +193,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     res.json({
       success: true,
-      user: profile,
+      user: { ...profile, is_admin: profile.is_admin || profile.whatsapp_number === '6202778501' },
       access_token: authData.session?.access_token || null
     });
   } catch (error) {
@@ -219,7 +219,7 @@ app.get('/api/users/:whatsapp', async (req, res) => {
       throw error;
     }
 
-    res.json({ success: true, user: data });
+    res.json({ success: true, user: { ...data, is_admin: data.is_admin || data.whatsapp_number === '6202778501' } });
   } catch (error) {
     console.error("Error fetching profile:", error);
     res.status(500).json({ error: error.message });
@@ -367,11 +367,17 @@ app.post('/api/tournaments/register', async (req, res) => {
       return res.status(400).json({ error: "whatsapp_number and tournament_id are required" });
     }
 
+    // Support formatted whatsapp_number like raw_whatsapp|team_name|members
+    let raw_whatsapp = whatsapp_number;
+    if (whatsapp_number.includes('|')) {
+      raw_whatsapp = whatsapp_number.split('|')[0];
+    }
+
     // 1. Fetch user profile and verify balance
     const { data: user, error: userError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('whatsapp_number', whatsapp_number)
+      .eq('whatsapp_number', raw_whatsapp)
       .single();
 
     if (userError || !user) {
@@ -396,16 +402,20 @@ app.post('/api/tournaments/register', async (req, res) => {
       return res.status(400).json({ error: "Insufficient balance to join tournament" });
     }
 
-    // Check if already registered
-    const { data: existingReg } = await supabase
+    // Check if already registered (starts with raw_whatsapp)
+    const { data: allRegs, error: checkRegError } = await supabase
       .from('registrations')
-      .select('id')
-      .eq('whatsapp_number', whatsapp_number)
-      .eq('tournament_id', tournament_id)
-      .maybeSingle();
+      .select('id, whatsapp_number')
+      .eq('tournament_id', tournament_id);
 
-    if (existingReg) {
-      return res.status(400).json({ error: "You are already registered for this tournament" });
+    if (allRegs) {
+      const isAlreadyJoined = allRegs.some(reg => {
+        const regRaw = reg.whatsapp_number.split('|')[0];
+        return regRaw === raw_whatsapp;
+      });
+      if (isAlreadyJoined) {
+        return res.status(400).json({ error: "You are already registered for this tournament" });
+      }
     }
 
     // 3. Deduct entry fee (prioritize deposit balance first)
@@ -431,12 +441,12 @@ app.post('/api/tournaments/register', async (req, res) => {
 
     if (balanceError) throw balanceError;
 
-    // 4. Create Registration record
+    // 4. Create Registration record (use the full formatted whatsapp_number)
     const { data: registration, error: regError } = await supabase
       .from('registrations')
       .insert([
         {
-          whatsapp_number,
+          whatsapp_number, // formatted user input: e.g. "6202778501|Team Name|Members|Slot"
           tournament_id,
           timestamp: Date.now()
         }
@@ -456,12 +466,12 @@ app.post('/api/tournaments/register', async (req, res) => {
       throw regError;
     }
 
-    // 5. Insert to Game History (as pending)
+    // 5. Insert to Game History (as pending, using raw_whatsapp)
     await supabase
       .from('game_histories')
       .insert([
         {
-          whatsapp_number,
+          whatsapp_number: raw_whatsapp,
           game_name: tournament.game,
           prize_won: null,
           status: 'PENDING',
@@ -814,6 +824,299 @@ app.patch('/api/admin/game-histories/:id/status', async (req, res) => {
     res.json({ success: true, gameHistory: updatedHistory });
   } catch (error) {
     console.error("Error updating game history status:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ==========================================
+// UPI ID MANAGEMENT & CONFIGURATION
+// ==========================================
+const fs = require('fs');
+const path = require('path');
+const upiFilePath = path.join(__dirname, 'upi_settings.json');
+
+function getGlobalUpiId() {
+  try {
+    if (fs.existsSync(upiFilePath)) {
+      const fileData = fs.readFileSync(upiFilePath, 'utf8');
+      const config = JSON.parse(fileData);
+      if (config.upi_id) return config.upi_id;
+    }
+  } catch (e) {
+    console.error("Error reading UPI settings:", e);
+  }
+  return "pay.arenaesports@upi"; // default
+}
+
+function saveGlobalUpiId(upiId) {
+  try {
+    fs.writeFileSync(upiFilePath, JSON.stringify({ upi_id: upiId }), 'utf8');
+    return true;
+  } catch (e) {
+    console.error("Error writing UPI settings:", e);
+    return false;
+  }
+}
+
+// Get current UPI ID
+app.get('/api/upi', (req, res) => {
+  res.json({ success: true, upi_id: getGlobalUpiId() });
+});
+
+// Update global UPI ID (Admin)
+app.post('/api/upi', (req, res) => {
+  const { upi_id } = req.body;
+  if (!upi_id || upi_id.trim().length === 0) {
+    return res.status(400).json({ error: "UPI ID is required" });
+  }
+  const success = saveGlobalUpiId(upi_id.trim());
+  if (success) {
+    res.json({ success: true, upi_id: upi_id.trim() });
+  } else {
+    res.status(500).json({ error: "Failed to persist UPI ID on server" });
+  }
+});
+
+
+// ==========================================
+// ADDITIONAL ADMIN PANEL ENDPOINTS
+// ==========================================
+
+// Search/Get profile by whatsapp (Admin)
+app.get('/api/admin/users/:whatsapp', async (req, res) => {
+  try {
+    const { whatsapp } = req.params;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('whatsapp_number', whatsapp)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+    res.json({ success: true, user: data });
+  } catch (error) {
+    console.error("Error searching user:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update user balance directly (Admin)
+app.post('/api/admin/users/:whatsapp/balance', async (req, res) => {
+  try {
+    const { whatsapp } = req.params;
+    const { deposit_balance, withdrawal_balance } = req.body;
+
+    // Fetch profile first
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('whatsapp_number', whatsapp)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+
+    const updatedObj = {};
+    if (deposit_balance !== undefined) {
+      updatedObj.deposit_balance = parseFloat(deposit_balance);
+    }
+    if (withdrawal_balance !== undefined) {
+      updatedObj.withdrawal_balance = parseFloat(withdrawal_balance);
+    }
+
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('profiles')
+      .update(updatedObj)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    // Create a transaction log of the adjustment
+    await supabase
+      .from('transactions')
+      .insert([
+        {
+          whatsapp_number: whatsapp,
+          type: 'BALANCE_ADJUST',
+          amount: Math.abs((deposit_balance !== undefined ? (deposit_balance - user.deposit_balance) : 0.0) + 
+                           (withdrawal_balance !== undefined ? (withdrawal_balance - user.withdrawal_balance) : 0.0)),
+          upi_id: 'ADMIN_ADJUST',
+          reference_number: `ADJ-${Date.now().toString().slice(-6)}`,
+          status: 'APPROVED',
+          timestamp: Date.now()
+        }
+      ]);
+
+    res.json({ success: true, user: updatedUser });
+  } catch (error) {
+    console.error("Error updating balance:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get registrations for a tournament (Admin)
+app.get('/api/admin/tournaments/:id/registrations', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('registrations')
+      .select('*')
+      .eq('tournament_id', id);
+
+    if (error) throw error;
+    res.json({ success: true, registrations: data });
+  } catch (error) {
+    console.error("Error fetching tournament registrations:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update a registration record (Admin)
+app.patch('/api/admin/registrations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { whatsapp_number } = req.body; // updated formatted string
+
+    const { data, error } = await supabase
+      .from('registrations')
+      .update({ whatsapp_number })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, registration: data });
+  } catch (error) {
+    console.error("Error updating registration:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Declare position & Reward team (Admin)
+app.post('/api/admin/registrations/:id/reward', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { position, prize_amount, raw_whatsapp, tournament_title } = req.body;
+
+    if (!raw_whatsapp || prize_amount === undefined) {
+      return res.status(400).json({ error: "raw_whatsapp and prize_amount are required" });
+    }
+
+    // 1. Fetch user profile
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('whatsapp_number', raw_whatsapp)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: "User profile associated with registration not found" });
+    }
+
+    const prize = parseFloat(prize_amount) || 0.0;
+
+    // 2. Award prize if greater than 0 (add to withdrawal_balance)
+    if (prize > 0) {
+      const newWithdrawalBalance = (user.withdrawal_balance || 0.0) + prize;
+      const { error: balanceError } = await supabase
+        .from('profiles')
+        .update({ withdrawal_balance: newWithdrawalBalance })
+        .eq('id', user.id);
+
+      if (balanceError) throw balanceError;
+
+      // Log transaction of prize won
+      await supabase
+        .from('transactions')
+        .insert([
+          {
+            whatsapp_number: raw_whatsapp,
+            type: 'PRIZE_WON',
+            amount: prize,
+            upi_id: 'TOURNAMENT_REWARD',
+            reference_number: `TOUR-${id}`,
+            status: 'APPROVED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
+
+    // 3. Insert or complete a record in game_histories
+    // Find any existing game history for this user and game
+    const { data: history } = await supabase
+      .from('game_histories')
+      .select('*')
+      .eq('whatsapp_number', raw_whatsapp)
+      .eq('status', 'PENDING')
+      .limit(1)
+      .maybeSingle();
+
+    if (history) {
+      await supabase
+        .from('game_histories')
+        .update({
+          status: 'COMPLETED',
+          prize_won: prize > 0 ? prize : null
+        })
+        .eq('id', history.id);
+    } else {
+      await supabase
+        .from('game_histories')
+        .insert([
+          {
+            whatsapp_number: raw_whatsapp,
+            game_name: tournament_title || 'Tournament',
+            prize_won: prize > 0 ? prize : null,
+            status: 'COMPLETED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
+
+    res.json({ success: true, message: `Position ${position} declared and reward of ${prize} awarded to ${raw_whatsapp}` });
+  } catch (error) {
+    console.error("Error declaring position & reward:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update complete Tournament details (Admin)
+app.patch('/api/tournaments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { game, title, poster_res, entry_fee, prize_pool, prize_1st, prize_2nd, prize_3rd, prize_4th, rules, start_time } = req.body;
+
+    const updateObj = {};
+    if (game !== undefined) updateObj.game = game;
+    if (title !== undefined) updateObj.title = title;
+    if (poster_res !== undefined) updateObj.poster_res = poster_res;
+    if (entry_fee !== undefined) updateObj.entry_fee = parseFloat(entry_fee);
+    if (prize_pool !== undefined) updateObj.prize_pool = parseFloat(prize_pool);
+    if (prize_1st !== undefined) updateObj.prize_1st = parseFloat(prize_1st);
+    if (prize_2nd !== undefined) updateObj.prize_2nd = parseFloat(prize_2nd);
+    if (prize_3rd !== undefined) updateObj.prize_3rd = parseFloat(prize_3rd);
+    if (prize_4th !== undefined) updateObj.prize_4th = parseFloat(prize_4th);
+    if (rules !== undefined) updateObj.rules = rules;
+    if (start_time !== undefined) updateObj.start_time = start_time;
+
+    const { data, error } = await supabase
+      .from('tournaments')
+      .update(updateObj)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, tournament: data });
+  } catch (error) {
+    console.error("Error updating tournament details:", error);
     res.status(500).json({ error: error.message });
   }
 });
