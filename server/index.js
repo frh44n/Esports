@@ -12,10 +12,11 @@ app.use(express.json());
 
 // Initialize Supabase Client
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
+const hasServiceRoleKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY);
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("CRITICAL ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing in environment variables!");
+  console.error("CRITICAL ERROR: SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY is missing in environment variables!");
   process.exit(1);
 }
 
@@ -56,16 +57,35 @@ app.post('/api/auth/signup', async (req, res) => {
 
     const maskedEmail = `${whatsapp}@arenaesports.com`;
 
-    // 1. Sign up user via Supabase Auth Admin API (bypassing email confirmation requirement)
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: maskedEmail,
-      password: password,
-      email_confirm: true,
-      user_metadata: {
-        whatsapp_number: whatsapp,
-        name: name || 'Gamer'
-      }
-    });
+    let authData, authError;
+    if (hasServiceRoleKey) {
+      // Sign up user via Supabase Auth Admin API (bypassing email confirmation requirement)
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: maskedEmail,
+        password: password,
+        email_confirm: true,
+        user_metadata: {
+          whatsapp_number: whatsapp,
+          name: name || 'Gamer'
+        }
+      });
+      authData = data;
+      authError = error;
+    } else {
+      // Fallback to standard signUp if service role key is not available
+      const { data, error } = await supabase.auth.signUp({
+        email: maskedEmail,
+        password: password,
+        options: {
+          data: {
+            whatsapp_number: whatsapp,
+            name: name || 'Gamer'
+          }
+        }
+      });
+      authData = data;
+      authError = error;
+    }
 
     if (authError) throw authError;
 
@@ -110,7 +130,9 @@ app.post('/api/auth/signup', async (req, res) => {
     if (profileError) {
       // Clean up Auth user if profile insertion failed
       try {
-        await supabase.auth.admin.deleteUser(userId);
+        if (hasServiceRoleKey) {
+          await supabase.auth.admin.deleteUser(userId);
+        }
       } catch (delErr) {
         console.error("Failed to delete auth user after profile insert error:", delErr);
       }
