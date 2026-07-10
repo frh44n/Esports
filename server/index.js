@@ -186,7 +186,7 @@ app.post('/api/auth/login', async (req, res) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .single();
 
     if (profileError) throw profileError;
@@ -209,7 +209,7 @@ app.get('/api/users/:whatsapp', async (req, res) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .single();
 
     if (error) {
@@ -497,7 +497,7 @@ app.get('/api/users/:whatsapp/registrations', async (req, res) => {
     const { data, error } = await supabase
       .from('registrations')
       .select('*')
-      .eq('whatsapp_number', whatsapp);
+      .like('whatsapp_number', `${whatsapp}%`);
 
     if (error) throw error;
     res.json({ success: true, registrations: data });
@@ -598,7 +598,7 @@ app.get('/api/users/:whatsapp/transactions', async (req, res) => {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .order('timestamp', { ascending: false })
       .limit(queryLimit);
 
@@ -716,7 +716,7 @@ app.get('/api/users/:whatsapp/game-histories', async (req, res) => {
     const { data, error } = await supabase
       .from('game_histories')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .order('timestamp', { ascending: false });
 
     if (error) throw error;
@@ -890,7 +890,7 @@ app.get('/api/admin/users/:whatsapp', async (req, res) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .maybeSingle();
 
     if (error) throw error;
@@ -914,7 +914,7 @@ app.post('/api/admin/users/:whatsapp/balance', async (req, res) => {
     const { data: user, error: userError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('whatsapp_number', whatsapp)
+      .like('whatsapp_number', `${whatsapp}%`)
       .single();
 
     if (userError || !user) {
