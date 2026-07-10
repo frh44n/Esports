@@ -16,8 +16,8 @@ class AppRepository(private val appDao: AppDao) {
     /**
      * SignUp online via Supabase
      */
-    suspend fun signUp(whatsappNumber: String, name: String, password: String, referralCode: String?): Result<User> = withContext(Dispatchers.IO) {
-        val result = SupabaseClient.signUp(whatsappNumber, name, password, referralCode)
+    suspend fun signUp(whatsappNumber: String, name: String, password: String, referralCode: String?, deviceId: String): Result<User> = withContext(Dispatchers.IO) {
+        val result = SupabaseClient.signUp(whatsappNumber, name, password, referralCode, deviceId)
         result.mapCatching { authResp ->
             // Fetch the newly created profile to get own referral code and default values
             val profile = SupabaseClient.fetchProfile(authResp.whatsappNumber)
@@ -216,6 +216,63 @@ class AppRepository(private val appDao: AppDao) {
             syncProfile(winnerWhatsapp)
         }
         success
+    }
+
+    suspend fun getGlobalUpiId(): String = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchGlobalUpiId()
+    }
+
+    suspend fun updateGlobalUpiId(upiId: String): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateGlobalUpiId(upiId)
+    }
+
+    suspend fun getGlobalSettings(): GlobalSettings = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchGlobalSettings()
+    }
+
+    suspend fun updateGlobalSettings(upiId: String? = null, waUrl: String? = null, tgUrl: String? = null, referralReward: Double? = null): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward)
+    }
+
+    suspend fun fetchAdminStats(): AdminStats? = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchAdminStats()
+    }
+
+    suspend fun searchUserAdmin(whatsapp: String): User? = withContext(Dispatchers.IO) {
+        SupabaseClient.searchUserAdmin(whatsapp)
+    }
+
+    suspend fun updateUserBalanceAdmin(whatsapp: String, deposit: Double?, withdrawal: Double?): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateUserBalanceAdmin(whatsapp, deposit, withdrawal)
+    }
+
+    suspend fun getTournamentRegistrations(tournamentId: Int): List<Registration> = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchTournamentRegistrations(tournamentId)
+    }
+
+    suspend fun updateRegistrationAdmin(registrationId: Int, formattedWhatsapp: String): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateRegistrationAdmin(registrationId, formattedWhatsapp)
+    }
+
+    suspend fun declarePositionAndReward(registrationId: Int, position: String, prizeAmount: Double, rawWhatsapp: String, tournamentTitle: String): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.declarePositionAndReward(registrationId, position, prizeAmount, rawWhatsapp, tournamentTitle)
+    }
+
+    suspend fun updateTournamentAdmin(
+        id: Int,
+        game: String,
+        title: String,
+        posterRes: String,
+        entryFee: Double,
+        prizePool: Double,
+        prize1st: Double,
+        prize2nd: Double,
+        prize3rd: Double,
+        prize4th: Double,
+        rules: String,
+        startTime: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateTournamentAdmin(id, game, title, posterRes, entryFee, prizePool, prize1st, prize2nd, prize3rd, prize4th, rules, startTime)
     }
 
     private fun prePopulateTournamentsOnline() {

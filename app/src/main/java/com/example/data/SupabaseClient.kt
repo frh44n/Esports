@@ -28,24 +28,11 @@ object SupabaseClient {
     }
 
     fun getServerUrl(): String {
-        val prefs = appContext?.getSharedPreferences("server_prefs", android.content.Context.MODE_PRIVATE)
-        val savedUrl = prefs?.getString("server_url", null)
-        if (!savedUrl.isNullOrBlank()) return savedUrl
-
-        return try {
-            val configUrl = BuildConfig.SERVER_URL
-            if (configUrl.startsWith("http")) configUrl else "https://gamer-tournament-api.onrender.com"
-        } catch (e: Exception) {
-            "https://gamer-tournament-api.onrender.com"
-        }
+        return "https://esports-13p1.onrender.com"
     }
 
     fun setServerUrl(context: android.content.Context, url: String) {
-        val prefs = context.getSharedPreferences("server_prefs", android.content.Context.MODE_PRIVATE)
-        val cleanUrl = url.trim().removeSuffix("/")
-        prefs.edit().putString("server_url", cleanUrl).apply()
-        // Force refresh in memory
-        init(context)
+        // No-op, removed
     }
 
     fun isConfigured(): Boolean {
@@ -58,13 +45,14 @@ object SupabaseClient {
         val whatsappNumber: String
     )
 
-    fun signUp(whatsapp: String, name: String, password: String, referralCode: String?): Result<AuthResponse> {
+    fun signUp(whatsapp: String, name: String, password: String, referralCode: String?, deviceId: String): Result<AuthResponse> {
         val url = "${getServerUrl()}/api/auth/signup"
         val bodyJson = JSONObject().apply {
             put("whatsapp", whatsapp)
             put("name", name)
             put("password", password)
             put("referral_code", referralCode ?: JSONObject.NULL)
+            put("device_id", deviceId)
         }
 
         val request = Request.Builder()
@@ -142,14 +130,15 @@ object SupabaseClient {
                     val jsonObj = JSONObject(bodyStr)
                     val obj = jsonObj.optJSONObject("user") ?: return null
                     User(
-                        whatsappNumber = obj.getString("whatsapp_number"),
+                        whatsappNumber = obj.optString("whatsapp_number", whatsapp),
                         name = obj.optString("name", "Gamer"),
-                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.getString("referral_code_used"),
-                        ownReferralCode = obj.getString("own_referral_code"),
+                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null),
+                        ownReferralCode = obj.optString("own_referral_code", ""),
                         depositBalance = obj.optDouble("deposit_balance", 0.0),
                         withdrawalBalance = obj.optDouble("withdrawal_balance", 0.0),
                         referredCount = obj.optInt("referred_count", 0),
-                        isLoggedIn = true
+                        isLoggedIn = true,
+                        isAdmin = obj.optBoolean("is_admin", false)
                     )
                 } else {
                     null
@@ -199,12 +188,12 @@ object SupabaseClient {
                     }
                     list
                 } else {
-                    emptyList()
+                    throw Exception("Server returned error ${response.code}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchTournaments error", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -306,12 +295,12 @@ object SupabaseClient {
                     }
                     list
                 } else {
-                    emptyList()
+                    throw Exception("Server returned error ${response.code}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchRegistrations error", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -362,25 +351,25 @@ object SupabaseClient {
                         val obj = jsonArr.getJSONObject(i)
                         list.add(
                             Transaction(
-                                id = obj.getInt("id"),
-                                whatsappNumber = obj.getString("whatsapp_number"),
-                                type = obj.getString("type"),
-                                amount = obj.getDouble("amount"),
-                                upiId = obj.getString("upi_id"),
-                                referenceNumber = if (obj.isNull("reference_number")) null else obj.getString("reference_number"),
-                                status = obj.getString("status"),
+                                id = obj.optInt("id", 0),
+                                whatsappNumber = obj.optString("whatsapp_number", ""),
+                                type = obj.optString("type", ""),
+                                amount = obj.optDouble("amount", 0.0),
+                                upiId = obj.optString("upi_id", ""),
+                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null),
+                                status = obj.optString("status", ""),
                                 timestamp = obj.optLong("timestamp", System.currentTimeMillis())
                             )
                         )
                     }
                     list
                 } else {
-                    emptyList()
+                    throw Exception("Server returned error ${response.code}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchTransactions error", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -402,25 +391,25 @@ object SupabaseClient {
                         val obj = jsonArr.getJSONObject(i)
                         list.add(
                             Transaction(
-                                id = obj.getInt("id"),
-                                whatsappNumber = obj.getString("whatsapp_number"),
-                                type = obj.getString("type"),
-                                amount = obj.getDouble("amount"),
-                                upiId = obj.getString("upi_id"),
-                                referenceNumber = if (obj.isNull("reference_number")) null else obj.getString("reference_number"),
-                                status = obj.getString("status"),
+                                id = obj.optInt("id", 0),
+                                whatsappNumber = obj.optString("whatsapp_number", ""),
+                                type = obj.optString("type", ""),
+                                amount = obj.optDouble("amount", 0.0),
+                                upiId = obj.optString("upi_id", ""),
+                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null),
+                                status = obj.optString("status", ""),
                                 timestamp = obj.optLong("timestamp", System.currentTimeMillis())
                             )
                         )
                     }
                     list
                 } else {
-                    emptyList()
+                    throw Exception("Server returned error ${response.code}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchAllTransactionsAdmin error", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -499,12 +488,12 @@ object SupabaseClient {
                     }
                     list
                 } else {
-                    emptyList()
+                    throw Exception("Server returned error ${response.code}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchGameHistories error", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -564,6 +553,276 @@ object SupabaseClient {
             }
         } catch (e: Exception) {
             Log.e(TAG, "updateGameHistoryStatus error", e)
+            false
+        }
+    }
+
+    fun fetchGlobalUpiId(): String {
+        return fetchGlobalSettings().upiId
+    }
+
+    fun updateGlobalUpiId(upiId: String): Boolean {
+        return updateGlobalSettings(upiId = upiId)
+    }
+
+    fun fetchGlobalSettings(): GlobalSettings {
+        val url = "${getServerUrl()}/api/settings"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    val settingsObj = jsonObj.optJSONObject("settings")
+                    if (settingsObj != null) {
+                        GlobalSettings(
+                            upiId = settingsObj.optString("upi_id", "pay.arenaesports@upi"),
+                            waUrl = settingsObj.optString("wa_url", "https://wa.me/919999999999"),
+                            tgUrl = settingsObj.optString("tg_url", "https://t.me/arenaesportssupport"),
+                            referralReward = settingsObj.optDouble("referral_reward", 50.0)
+                        )
+                    } else {
+                        GlobalSettings()
+                    }
+                } else {
+                    GlobalSettings()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchGlobalSettings error", e)
+            GlobalSettings()
+        }
+    }
+
+    fun updateGlobalSettings(upiId: String? = null, waUrl: String? = null, tgUrl: String? = null, referralReward: Double? = null): Boolean {
+        val url = "${getServerUrl()}/api/settings"
+        val bodyJson = JSONObject().apply {
+            upiId?.let { put("upi_id", it) }
+            waUrl?.let { put("wa_url", it) }
+            tgUrl?.let { put("tg_url", it) }
+            referralReward?.let { put("referral_reward", it) }
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateGlobalSettings error", e)
+            false
+        }
+    }
+
+    fun fetchAdminStats(): AdminStats? {
+        val url = "${getServerUrl()}/api/admin/stats"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    if (jsonObj.optBoolean("success")) {
+                        val statsObj = jsonObj.optJSONObject("stats") ?: return null
+                        val graphArray = statsObj.optJSONArray("graphData")
+                        val graphData = mutableListOf<GraphDataPoint>()
+                        if (graphArray != null) {
+                            for (i in 0 until graphArray.length()) {
+                                val item = graphArray.optJSONObject(i)
+                                if (item != null) {
+                                    graphData.add(
+                                        GraphDataPoint(
+                                            date = item.optString("date"),
+                                            users = item.optInt("users"),
+                                            spent = item.optDouble("spent")
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        AdminStats(
+                            totalUsers = statsObj.optInt("totalUsers"),
+                            dailyUsers = statsObj.optInt("dailyUsers"),
+                            weeklyUsers = statsObj.optInt("weeklyUsers"),
+                            monthlyUsers = statsObj.optInt("monthlyUsers"),
+                            totalSpent = statsObj.optDouble("totalSpent"),
+                            dailySpent = statsObj.optDouble("dailySpent"),
+                            weeklySpent = statsObj.optDouble("weeklySpent"),
+                            monthlySpent = statsObj.optDouble("monthlySpent"),
+                            graphData = graphData
+                        )
+                    } else null
+                } else null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchAdminStats error", e)
+            null
+        }
+    }
+
+    fun searchUserAdmin(whatsapp: String): User? {
+        val url = "${getServerUrl()}/api/admin/users/$whatsapp"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    val obj = jsonObj.optJSONObject("user") ?: return null
+                    User(
+                        whatsappNumber = obj.optString("whatsapp_number", whatsapp),
+                        name = obj.optString("name", "Gamer"),
+                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null),
+                        ownReferralCode = obj.optString("own_referral_code", ""),
+                        depositBalance = obj.optDouble("deposit_balance", 0.0),
+                        withdrawalBalance = obj.optDouble("withdrawal_balance", 0.0),
+                        referredCount = obj.optInt("referred_count", 0),
+                        isLoggedIn = false,
+                        isAdmin = obj.optBoolean("is_admin", false)
+                    )
+                } else {
+                    fetchProfile(whatsapp)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "searchUserAdmin error, falling back to fetchProfile", e)
+            fetchProfile(whatsapp)
+        }
+    }
+
+    fun updateUserBalanceAdmin(whatsapp: String, deposit: Double?, withdrawal: Double?): Boolean {
+        val url = "${getServerUrl()}/api/admin/users/$whatsapp/balance"
+        val bodyJson = JSONObject().apply {
+            if (deposit != null) put("deposit_balance", deposit)
+            if (withdrawal != null) put("withdrawal_balance", withdrawal)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateUserBalanceAdmin error", e)
+            false
+        }
+    }
+
+    fun fetchTournamentRegistrations(tournamentId: Int): List<Registration> {
+        val url = "${getServerUrl()}/api/admin/tournaments/$tournamentId/registrations"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    val jsonArr = jsonObj.optJSONArray("registrations") ?: JSONArray()
+                    val list = mutableListOf<Registration>()
+                    for (i in 0 until jsonArr.length()) {
+                        val obj = jsonArr.getJSONObject(i)
+                        list.add(
+                            Registration(
+                                id = obj.getInt("id"),
+                                whatsappNumber = obj.getString("whatsapp_number"),
+                                tournamentId = obj.getInt("tournament_id"),
+                                timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                    list
+                } else {
+                    throw Exception("Server returned error ${response.code}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchTournamentRegistrations error", e)
+            throw e
+        }
+    }
+
+    fun updateRegistrationAdmin(registrationId: Int, formattedWhatsapp: String): Boolean {
+        val url = "${getServerUrl()}/api/admin/registrations/$registrationId"
+        val bodyJson = JSONObject().apply {
+            put("whatsapp_number", formattedWhatsapp)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .patch(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateRegistrationAdmin error", e)
+            false
+        }
+    }
+
+    fun declarePositionAndReward(registrationId: Int, position: String, prizeAmount: Double, rawWhatsapp: String, tournamentTitle: String): Boolean {
+        val url = "${getServerUrl()}/api/admin/registrations/$registrationId/reward"
+        val bodyJson = JSONObject().apply {
+            put("position", position)
+            put("prize_amount", prizeAmount)
+            put("raw_whatsapp", rawWhatsapp)
+            put("tournament_title", tournamentTitle)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "declarePositionAndReward error", e)
+            false
+        }
+    }
+
+    fun updateTournamentAdmin(
+        id: Int,
+        game: String,
+        title: String,
+        posterRes: String,
+        entryFee: Double,
+        prizePool: Double,
+        prize1st: Double,
+        prize2nd: Double,
+        prize3rd: Double,
+        prize4th: Double,
+        rules: String,
+        startTime: String
+    ): Boolean {
+        val url = "${getServerUrl()}/api/tournaments/$id"
+        val bodyJson = JSONObject().apply {
+            put("game", game)
+            put("title", title)
+            put("poster_res", posterRes)
+            put("entry_fee", entryFee)
+            put("prize_pool", prizePool)
+            put("prize_1st", prize1st)
+            put("prize_2nd", prize2nd)
+            put("prize_3rd", prize3rd)
+            put("prize_4th", prize4th)
+            put("rules", rules)
+            put("start_time", startTime)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .patch(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateTournamentAdmin error", e)
             false
         }
     }

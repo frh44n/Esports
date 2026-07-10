@@ -12,7 +12,8 @@ data class User(
     val depositBalance: Double = 0.0,
     val withdrawalBalance: Double = 0.0,
     val referredCount: Int = 0,
-    val isLoggedIn: Boolean = true
+    val isLoggedIn: Boolean = true,
+    val isAdmin: Boolean = false
 )
 
 @Entity(tableName = "tournaments")
@@ -62,4 +63,34 @@ data class GameHistory(
     val prizeWon: Double?, // null for PENDING, otherwise amount
     val status: String, // "PENDING", "COMPLETED"
     val timestamp: Long = System.currentTimeMillis()
+)
+
+data class GlobalSettings(
+    val upiId: String = "pay.arenaesports@upi",
+    val waUrl: String = "https://wa.me/919999999999",
+    val tgUrl: String = "https://t.me/arenaesportssupport",
+    val referralReward: Double = 50.0
+)
+
+data class AdminStatsResponse(
+    val success: Boolean,
+    val stats: AdminStats
+)
+
+data class AdminStats(
+    val totalUsers: Int,
+    val dailyUsers: Int,
+    val weeklyUsers: Int,
+    val monthlyUsers: Int,
+    val totalSpent: Double,
+    val dailySpent: Double,
+    val weeklySpent: Double,
+    val monthlySpent: Double,
+    val graphData: List<GraphDataPoint>
+)
+
+data class GraphDataPoint(
+    val date: String,
+    val users: Int,
+    val spent: Double
 )

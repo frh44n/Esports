@@ -4,6 +4,10 @@
   "private": true,
   "scripts": {
     "postinstall": "cd server && npm install",
+    "build": "echo 'No build step required for root'",
     "start": "cd server && npm start"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.1.0"
   }
 }

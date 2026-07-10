@@ -10,6 +10,16 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
+// Initialize Firebase Admin
+const admin = require("firebase-admin");
+let firebaseApp = null;
+try {
+  firebaseApp = admin.initializeApp();
+  console.log("Firebase Admin initialized");
+} catch(err) {
+  console.log("Firebase Admin init skipped/failed. Ensure GOOGLE_APPLICATION_CREDENTIALS is set.");
+}
+
 // Initialize Supabase Client
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
@@ -50,9 +60,21 @@ app.get('/health', (req, res) => {
 // Sign Up Endpoint
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const { whatsapp, name, password, referral_code } = req.body;
+    const { whatsapp, name, password, referral_code, device_id } = req.body;
     if (!whatsapp || !password) {
       return res.status(400).json({ error: "WhatsApp number and password are required" });
+    }
+
+    if (device_id) {
+      const { count, error: countErr } = await supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'DEVICE_REGISTRATION')
+        .eq('reference_number', device_id);
+      
+      if (!countErr && count >= 2) {
+        return res.status(400).json({ error: "Maximum 2 accounts can be registered from this device." });
+      }
     }
 
     const maskedEmail = `${whatsapp}@arenaesports.com`;
@@ -142,6 +164,19 @@ app.post('/api/auth/signup', async (req, res) => {
     // 3. Trigger Referral Reward if code was used
     if (referral_code) {
       await handleReferralReward(referral_code, whatsapp);
+    }
+
+    // 4. Log device registration
+    if (device_id) {
+      await supabase.from('transactions').insert([{
+        whatsapp_number: whatsapp,
+        type: 'DEVICE_REGISTRATION',
+        amount: 0,
+        upi_id: 'SYSTEM',
+        reference_number: device_id,
+        status: 'APPROVED',
+        timestamp: Date.now()
+      }]);
     }
 
     res.status(201).json({
@@ -264,6 +299,47 @@ app.get('/api/tournaments/:id', async (req, res) => {
       throw error;
     }
 
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let title = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) title = data.title;
+        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
+        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
+        
+        const message = {
+          notification: {
+            title: title,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let titleStr = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) titleStr = data.title;
+        const message = {
+          notification: {
+            title: titleStr,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
     res.json({ success: true, tournament: data });
   } catch (error) {
     console.error("Error fetching tournament:", error);
@@ -329,6 +405,47 @@ app.patch('/api/tournaments/:id/room', async (req, res) => {
       .single();
 
     if (error) throw error;
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let title = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) title = data.title;
+        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
+        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
+        
+        const message = {
+          notification: {
+            title: title,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let titleStr = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) titleStr = data.title;
+        const message = {
+          notification: {
+            title: titleStr,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
     res.json({ success: true, tournament: data });
   } catch (error) {
     console.error("Error updating room info:", error);
@@ -472,7 +589,7 @@ app.post('/api/tournaments/register', async (req, res) => {
       .insert([
         {
           whatsapp_number: raw_whatsapp,
-          game_name: tournament.game,
+          game_name: `${tournament.game} - ${tournament.title}`,
           prize_won: null,
           status: 'PENDING',
           timestamp: Date.now()
@@ -610,9 +727,112 @@ app.get('/api/users/:whatsapp/transactions', async (req, res) => {
   }
 });
 
+
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    const { data: users, error: usersErr } = await supabase.from('profiles').select('created_at');
+    if (usersErr) throw usersErr;
+
+    const { data: txs, error: txsErr } = await supabase.from('transactions').select('amount, type, status, timestamp').eq('status', 'APPROVED');
+    if (txsErr) throw txsErr;
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    // Helper to check if a date string is in the current day, week, month
+    const isToday = (dateStr) => {
+      if (!dateStr) return false;
+      return new Date(dateStr).toISOString().split('T')[0] === todayStr;
+    };
+    
+    const getWeekNumber = (d) => {
+      d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+      return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+    };
+    const currentWeek = getWeekNumber(now);
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const isThisWeek = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return getWeekNumber(d) === currentWeek && d.getFullYear() === currentYear;
+    };
+
+    const isThisMonth = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    };
+
+    let totalUsers = users.length;
+    let dailyUsers = 0;
+    let weeklyUsers = 0;
+    let monthlyUsers = 0;
+
+    users.forEach(u => {
+      if (isToday(u.created_at)) dailyUsers++;
+      if (isThisWeek(u.created_at)) weeklyUsers++;
+      if (isThisMonth(u.created_at)) monthlyUsers++;
+    });
+
+    let totalSpent = 0;
+    let dailySpent = 0;
+    let weeklySpent = 0;
+    let monthlySpent = 0;
+    
+    // Graph data grouped by day for the last 7 days
+    const last7Days = [];
+    for(let i=6; i>=0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      last7Days.push({
+        date: d.toISOString().split('T')[0],
+        users: 0,
+        spent: 0
+      });
+    }
+
+    txs.forEach(tx => {
+      if (tx.type === 'DEPOSIT') {
+        const txDate = new Date(tx.timestamp);
+        const amt = tx.amount || 0;
+        totalSpent += amt;
+        if (isToday(txDate)) dailySpent += amt;
+        if (isThisWeek(txDate)) weeklySpent += amt;
+        if (isThisMonth(txDate)) monthlySpent += amt;
+        
+        const dStr = txDate.toISOString().split('T')[0];
+        const dayItem = last7Days.find(item => item.date === dStr);
+        if (dayItem) dayItem.spent += amt;
+      }
+    });
+
+    users.forEach(u => {
+       if (u.created_at) {
+          const dStr = new Date(u.created_at).toISOString().split('T')[0];
+          const dayItem = last7Days.find(item => item.date === dStr);
+          if (dayItem) dayItem.users++;
+       }
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        totalUsers, dailyUsers, weeklyUsers, monthlyUsers,
+        totalSpent, dailySpent, weeklySpent, monthlySpent,
+        graphData: last7Days
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 // Fetch all transactions (Admin dashboard)
 app.get('/api/admin/transactions', async (req, res) => {
-  try {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
@@ -830,47 +1050,81 @@ app.patch('/api/admin/game-histories/:id/status', async (req, res) => {
 
 
 // ==========================================
-// UPI ID MANAGEMENT & CONFIGURATION
+// CONFIGURATION MANAGEMENT
 // ==========================================
 const fs = require('fs');
 const path = require('path');
-const upiFilePath = path.join(__dirname, 'upi_settings.json');
+const configFilePath = path.join(__dirname, 'app_settings.json');
+const oldUpiFilePath = path.join(__dirname, 'upi_settings.json');
 
-function getGlobalUpiId() {
+function getGlobalSettings() {
+  let settings = {
+    upi_id: "pay.arenaesports@upi",
+    wa_url: "https://wa.me/919999999999",
+    tg_url: "https://t.me/arenaesportssupport",
+    referral_reward: 50.0
+  };
   try {
-    if (fs.existsSync(upiFilePath)) {
-      const fileData = fs.readFileSync(upiFilePath, 'utf8');
+    if (fs.existsSync(configFilePath)) {
+      const fileData = fs.readFileSync(configFilePath, 'utf8');
+      settings = { ...settings, ...JSON.parse(fileData) };
+    } else if (fs.existsSync(oldUpiFilePath)) {
+      const fileData = fs.readFileSync(oldUpiFilePath, 'utf8');
       const config = JSON.parse(fileData);
-      if (config.upi_id) return config.upi_id;
+      if (config.upi_id) settings.upi_id = config.upi_id;
     }
   } catch (e) {
-    console.error("Error reading UPI settings:", e);
+    console.error("Error reading settings:", e);
   }
-  return "pay.arenaesports@upi"; // default
+  return settings;
 }
 
-function saveGlobalUpiId(upiId) {
+function saveGlobalSettings(newSettings) {
   try {
-    fs.writeFileSync(upiFilePath, JSON.stringify({ upi_id: upiId }), 'utf8');
+    const settings = getGlobalSettings();
+    const updatedSettings = { ...settings, ...newSettings };
+    fs.writeFileSync(configFilePath, JSON.stringify(updatedSettings), 'utf8');
     return true;
   } catch (e) {
-    console.error("Error writing UPI settings:", e);
+    console.error("Error writing settings:", e);
     return false;
   }
 }
 
-// Get current UPI ID
-app.get('/api/upi', (req, res) => {
-  res.json({ success: true, upi_id: getGlobalUpiId() });
+// Get current config
+app.get('/api/settings', (req, res) => {
+  res.json({ success: true, settings: getGlobalSettings() });
 });
 
-// Update global UPI ID (Admin)
+// Update global config (Admin)
+app.post('/api/settings', (req, res) => {
+  const { upi_id, wa_url, tg_url, referral_reward } = req.body;
+  const updates = {};
+  if (upi_id && upi_id.trim().length > 0) updates.upi_id = upi_id.trim();
+  if (wa_url && wa_url.trim().length > 0) updates.wa_url = wa_url.trim();
+  if (tg_url && tg_url.trim().length > 0) updates.tg_url = tg_url.trim();
+  if (referral_reward !== undefined) updates.referral_reward = parseFloat(referral_reward) || 0;
+  
+  const success = saveGlobalSettings(updates);
+  if (success) {
+    res.json({ success: true, settings: getGlobalSettings() });
+  } else {
+    res.status(500).json({ error: "Failed to persist settings on server" });
+  }
+});
+
+// Legacy Get current UPI ID (for backwards compatibility if needed)
+app.get('/api/upi', (req, res) => {
+  res.json({ success: true, upi_id: getGlobalSettings().upi_id });
+});
+
+// Legacy Update global UPI ID (Admin)
 app.post('/api/upi', (req, res) => {
   const { upi_id } = req.body;
   if (!upi_id || upi_id.trim().length === 0) {
     return res.status(400).json({ error: "UPI ID is required" });
   }
-  const success = saveGlobalUpiId(upi_id.trim());
+  const success = saveGlobalSettings({ upi_id: upi_id.trim() });
   if (success) {
     res.json({ success: true, upi_id: upi_id.trim() });
   } else {
@@ -1114,6 +1368,47 @@ app.patch('/api/tournaments/:id', async (req, res) => {
       .single();
 
     if (error) throw error;
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let title = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) title = data.title;
+        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
+        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
+        
+        const message = {
+          notification: {
+            title: title,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
+    // Send FCM Notification to topic
+    if (firebaseApp) {
+      try {
+        let titleStr = "Tournament Update";
+        let bodyStr = "Your registered tournament has been updated by the admin.";
+        if (data && data.title) titleStr = data.title;
+        const message = {
+          notification: {
+            title: titleStr,
+            body: bodyStr
+          },
+          topic: `tournament_${id}`
+        };
+        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
+      } catch (err) {
+        console.error("FCM Send Exception:", err);
+      }
+    }
+
     res.json({ success: true, tournament: data });
   } catch (error) {
     console.error("Error updating tournament details:", error);
@@ -1142,11 +1437,14 @@ async function handleReferralReward(referrerCode, referredWhatsapp) {
     const currentDeposit = referrer.deposit_balance || 0.0;
     const currentReferredCount = referrer.referred_count || 0;
 
+    const settings = getGlobalSettings();
+    const rewardAmount = settings.referral_reward !== undefined ? parseFloat(settings.referral_reward) : 50.0;
+
     // 2. Update referrer balances & count
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        deposit_balance: currentDeposit + 50.0, // 50 credits reward
+        deposit_balance: currentDeposit + rewardAmount,
         referred_count: currentReferredCount + 1
       })
       .eq('id', referrer.id);
@@ -1160,7 +1458,7 @@ async function handleReferralReward(referrerCode, referredWhatsapp) {
         {
           whatsapp_number: referrer.whatsapp_number,
           type: 'REFERRAL_REWARD',
-          amount: 50.0,
+          amount: rewardAmount,
           upi_id: 'REFERRAL',
           reference_number: `REF-${referredWhatsapp}`,
           status: 'APPROVED',
