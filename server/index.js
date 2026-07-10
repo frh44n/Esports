@@ -10,15 +10,6 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firebase Admin
-const admin = require("firebase-admin");
-let firebaseApp = null;
-try {
-  firebaseApp = admin.initializeApp();
-  console.log("Firebase Admin initialized");
-} catch(err) {
-  console.log("Firebase Admin init skipped/failed. Ensure GOOGLE_APPLICATION_CREDENTIALS is set.");
-}
 
 // Initialize Supabase Client
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -299,46 +290,6 @@ app.get('/api/tournaments/:id', async (req, res) => {
       throw error;
     }
 
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let title = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) title = data.title;
-        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
-        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
-        
-        const message = {
-          notification: {
-            title: title,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
-
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let titleStr = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) titleStr = data.title;
-        const message = {
-          notification: {
-            title: titleStr,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
 
     res.json({ success: true, tournament: data });
   } catch (error) {
@@ -405,46 +356,6 @@ app.patch('/api/tournaments/:id/room', async (req, res) => {
       .single();
 
     if (error) throw error;
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let title = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) title = data.title;
-        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
-        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
-        
-        const message = {
-          notification: {
-            title: title,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
-
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let titleStr = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) titleStr = data.title;
-        const message = {
-          notification: {
-            title: titleStr,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
 
     res.json({ success: true, tournament: data });
   } catch (error) {
@@ -1369,46 +1280,6 @@ app.patch('/api/tournaments/:id', async (req, res) => {
       .single();
 
     if (error) throw error;
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let title = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) title = data.title;
-        if (room_id) bodyStr = `Room Details Updated! ID: ${room_id}`;
-        else if (start_time) bodyStr = `Start Time Updated to ${start_time}`;
-        
-        const message = {
-          notification: {
-            title: title,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
-
-    // Send FCM Notification to topic
-    if (firebaseApp) {
-      try {
-        let titleStr = "Tournament Update";
-        let bodyStr = "Your registered tournament has been updated by the admin.";
-        if (data && data.title) titleStr = data.title;
-        const message = {
-          notification: {
-            title: titleStr,
-            body: bodyStr
-          },
-          topic: `tournament_${id}`
-        };
-        admin.messaging().send(message).then((resp) => console.log("FCM Sent:", resp)).catch(err => console.error("FCM Send Error:", err));
-      } catch (err) {
-        console.error("FCM Send Exception:", err);
-      }
-    }
 
     res.json({ success: true, tournament: data });
   } catch (error) {
