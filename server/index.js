@@ -297,7 +297,6 @@ app.get('/api/tournaments/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 // Create a new tournament (Admin)
 app.post('/api/tournaments', async (req, res) => {
   try {

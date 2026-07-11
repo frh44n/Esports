@@ -2715,6 +2715,10 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
 
                                 Button(
                                     onClick = {
+                                        if (title.isBlank() || startTime.isBlank()) {
+                                            viewModel.showToast("Title and Start Time are required fields")
+                                            return@Button
+                                        }
                                         val maxCount = maxTeams.toIntOrNull() ?: 100
                                         val extraPrizesStr = if (extraPrizesList.isNotEmpty()) {
                                             "\n\n--- Extra Prizes ---\n" + extraPrizesList.filter { it.first.isNotBlank() }.joinToString("\n") { "${it.first}: ₹${it.second}" }
