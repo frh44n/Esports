@@ -69,7 +69,8 @@ data class GlobalSettings(
     val upiId: String = "pay.arenaesports@upi",
     val waUrl: String = "https://wa.me/919999999999",
     val tgUrl: String = "https://t.me/arenaesportssupport",
-    val referralReward: Double = 50.0
+    val referralReward: Double = 50.0,
+    val referralMinDeposit: Double = 20.0
 )
 
 data class AdminStatsResponse(
@@ -93,4 +94,17 @@ data class GraphDataPoint(
     val date: String,
     val users: Int,
     val spent: Double
+)
+
+data class ReferredUser(
+    val maskedWhatsapp: String,
+    val name: String,
+    val totalDeposited: Double,
+    val createdAt: String
+)
+
+data class ReferredUsersResponse(
+    val success: Boolean,
+    val total: Int,
+    val users: List<ReferredUser>
 )

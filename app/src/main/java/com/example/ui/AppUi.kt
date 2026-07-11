@@ -59,6 +59,35 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.animation.core.*
 
+fun Tournament.getCustomRankPrizes(): Map<String, String>? {
+    val customPrizesMatch = this.rules.substringAfter("\n\n--- Custom Rank Prizes ---\n", "")
+    if (customPrizesMatch.isNotBlank() && customPrizesMatch != this.rules) {
+        val actualCustomPart = customPrizesMatch.substringBefore("\n\n---")
+        val lines = actualCustomPart.split("\n")
+        var p1 = ""
+        var p2 = ""
+        var p3 = ""
+        var p4 = ""
+        lines.forEach { line ->
+            if (line.startsWith("1st: ")) p1 = line.removePrefix("1st: ")
+            if (line.startsWith("2nd: ")) p2 = line.removePrefix("2nd: ")
+            if (line.startsWith("3rd: ")) p3 = line.removePrefix("3rd: ")
+            if (line.startsWith("4th: ")) p4 = line.removePrefix("4th: ")
+        }
+        if (p1.isNotBlank() || p2.isNotBlank() || p3.isNotBlank() || p4.isNotBlank()) {
+            return mapOf("1st" to p1, "2nd" to p2, "3rd" to p3, "4th" to p4)
+        }
+    }
+    return null
+}
+
+fun Tournament.getCleanedRules(): String {
+    return this.rules
+        .substringBefore("\n\n--- Extra Prizes ---\n")
+        .substringBefore("\n\n--- Custom Rank Prizes ---\n")
+        .substringBefore("\n\n--- Point Table ---\n")
+}
+
 // Centralized premium gaming color tokens
 val DarkBg = Color(0xFF0C0F16)
 val CardBg = Color(0xFF161B26)
@@ -100,6 +129,7 @@ fun AppUi(viewModel: MainViewModel) {
                 "home" -> HomeScreen(viewModel)
                 "admin" -> AdminPanelScreen(viewModel)
                 "history" -> HistoryScreen(viewModel)
+                "referral_details" -> ReferralDetailsScreen(viewModel)
             }
         }
     }
@@ -1039,34 +1069,27 @@ fun EsportsSection(viewModel: MainViewModel) {
                         color = Color.LightGray,
                         fontWeight = FontWeight.Medium
                     )
-                    Text(
-                        text = "1ST PRIZE: ₹${tour.prize1st}",
-                        fontSize = 12.sp,
-                        color = Color.LightGray,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "2ND PRIZE: ₹${tour.prize2nd}",
-                        fontSize = 12.sp,
-                        color = Color.LightGray,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "3RD PRIZE: ₹${tour.prize3rd}",
-                        fontSize = 12.sp,
-                        color = Color.LightGray,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "4TH PRIZE: ₹${tour.prize4th}",
-                        fontSize = 12.sp,
-                        color = Color.LightGray,
-                        fontWeight = FontWeight.Medium
-                    )
+                    val customRankPrizes = tour.getCustomRankPrizes()
+                    if (customRankPrizes != null) {
+                        val p1 = customRankPrizes["1st"] ?: ""
+                        val p2 = customRankPrizes["2nd"] ?: ""
+                        val p3 = customRankPrizes["3rd"] ?: ""
+                        val p4 = customRankPrizes["4th"] ?: ""
+                        if (p1.isNotBlank()) Text(text = "1ST PRIZE: $p1", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        if (p2.isNotBlank()) Text(text = "2ND PRIZE: $p2", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        if (p3.isNotBlank()) Text(text = "3RD PRIZE: $p3", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        if (p4.isNotBlank()) Text(text = "4TH PRIZE: $p4", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                    } else {
+                        Text(text = "1ST PRIZE: ₹${tour.prize1st}", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        Text(text = "2ND PRIZE: ₹${tour.prize2nd}", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        Text(text = "3RD PRIZE: ₹${tour.prize3rd}", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                        Text(text = "4TH PRIZE: ₹${tour.prize4th}", fontSize = 12.sp, color = Color.LightGray, fontWeight = FontWeight.Medium)
+                    }
 
                     val parts = tour.rules.split("\n\n--- Extra Prizes ---\n")
                     if (parts.size > 1) {
-                        parts[1].split("\n").forEach { line ->
+                        val extraPart = parts[1].substringBefore("\n\n--- Custom Rank Prizes ---\n").substringBefore("\n\n--- Point Table ---\n")
+                        extraPart.split("\n").forEach { line ->
                             if (line.isNotBlank()) {
                                 Text(
                                     text = line.uppercase(),
@@ -1089,7 +1112,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (parts.size > 1) parts[0] else tour.rules,
+                        text = tour.getCleanedRules(),
                         fontSize = 11.sp,
                         color = Color.Gray,
                         lineHeight = 15.sp,
@@ -1662,6 +1685,12 @@ fun GameHistorySection(viewModel: MainViewModel) {
     val histories by viewModel.gameHistories.collectAsStateWithLifecycle()
     val tournaments by viewModel.allTournaments.collectAsStateWithLifecycle()
     var showPointTableUrl by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // "only show earliest 10 game history" -> sorted by timestamp/id ascending (earliest first), taking 10.
+    val earliestHistories = remember(histories) {
+        histories.sortedBy { it.timestamp }.take(10)
+    }
 
     Column(
         modifier = Modifier
@@ -1675,13 +1704,13 @@ fun GameHistorySection(viewModel: MainViewModel) {
             color = Color.White
         )
         Text(
-            text = "View the outcomes and prizes of your registered matches",
+            text = "View the outcomes and prizes of your earliest 10 registered matches",
             fontSize = 12.sp,
             color = Color.Gray,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        if (histories.isEmpty()) {
+        if (earliestHistories.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -1696,7 +1725,7 @@ fun GameHistorySection(viewModel: MainViewModel) {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(histories) { history ->
+                items(earliestHistories) { history ->
                     // Parse tournament details and metadata
                     val parts = history.gameName.split("|")
                     val cleanGameName = parts.getOrNull(0) ?: history.gameName
@@ -1771,23 +1800,51 @@ fun GameHistorySection(viewModel: MainViewModel) {
 
                             if (pointsTableUrl != null) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                OutlinedButton(
-                                    onClick = { showPointTableUrl = pointsTableUrl },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = CyanGlow,
-                                        containerColor = CyanGlow.copy(alpha = 0.05f)
-                                    ),
-                                    border = BorderStroke(1.dp, CyanGlow),
-                                    modifier = Modifier.fillMaxWidth()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.List,
-                                        contentDescription = "Point Table",
-                                        modifier = Modifier.size(16.dp),
-                                        tint = CyanGlow
-                                    )
+                                    OutlinedButton(
+                                        onClick = { showPointTableUrl = pointsTableUrl },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = CyanGlow,
+                                            containerColor = CyanGlow.copy(alpha = 0.05f)
+                                        ),
+                                        border = BorderStroke(1.dp, CyanGlow),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.List,
+                                            contentDescription = "Point Table",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = CyanGlow
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("View Point Table", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("View Point Table", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+                                    IconButton(
+                                        onClick = {
+                                            downloadFile(
+                                                context,
+                                                pointsTableUrl,
+                                                "points_table_${System.currentTimeMillis()}.jpg"
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(CyanGlow.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                            .border(1.dp, CyanGlow, RoundedCornerShape(8.dp))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = "Download Point Table",
+                                            tint = CyanGlow,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1811,12 +1868,37 @@ fun GameHistorySection(viewModel: MainViewModel) {
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "📊 Tournament Point Table",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "📊 Point Table",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        IconButton(
+                            onClick = {
+                                downloadFile(
+                                    context,
+                                    showPointTableUrl!!,
+                                    "points_table_${System.currentTimeMillis()}.jpg"
+                                )
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(CyanGlow.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Download Point Table",
+                                tint = CyanGlow,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                     coil.compose.SubcomposeAsyncImage(
                         model = showPointTableUrl,
@@ -1862,6 +1944,24 @@ fun GameHistorySection(viewModel: MainViewModel) {
                 }
             }
         }
+    }
+}
+
+private fun downloadFile(context: android.content.Context, url: String, fileName: String) {
+    try {
+        val request = android.app.DownloadManager.Request(android.net.Uri.parse(url)).apply {
+            setTitle(fileName)
+            setDescription("Downloading Points Table...")
+            setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+            setAllowedOverMetered(true)
+            setAllowedOverRoaming(true)
+        }
+        val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+        downloadManager.enqueue(request)
+        android.widget.Toast.makeText(context, "Download started...", android.widget.Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Failed to start download: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
     }
 }
 
@@ -2084,7 +2184,7 @@ fun MenuSection(viewModel: MainViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Share your referral code. Get ₹50.00 instantly upon their signup!",
+                        text = "Share your referral code. Get ₹${globalSettings.referralReward} when your referred friend deposits a minimum of ₹${globalSettings.referralMinDeposit}!",
                         fontSize = 12.sp,
                         color = Color.LightGray,
                         textAlign = TextAlign.Center
@@ -2117,14 +2217,32 @@ fun MenuSection(viewModel: MainViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBg),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setScreen("referral_details") },
+                        border = BorderStroke(1.dp, BorderColor)
                     ) {
-                        Text("Total Referrals:", fontSize = 13.sp, color = Color.Gray)
-                        Text("${user?.referredCount ?: 0} Players", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = CyanGlow)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Total Joined Users", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Click to view details and deposits", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${user?.referredCount ?: 0} Players", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = CyanGlow)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.KeyboardArrowRight, contentDescription = "View Details", tint = CyanGlow)
+                            }
+                        }
                     }
                 }
             }
@@ -2486,6 +2604,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                     var waUrlInput by remember { mutableStateOf(globalSettings.waUrl) }
                     var tgUrlInput by remember { mutableStateOf(globalSettings.tgUrl) }
                     var referralRewardInput by remember { mutableStateOf(globalSettings.referralReward.toString()) }
+                    var referralMinDepositInput by remember { mutableStateOf(globalSettings.referralMinDeposit.toString()) }
 
                     // Sync state manually if navigating
                     LaunchedEffect(globalSettings) {
@@ -2493,6 +2612,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                         waUrlInput = globalSettings.waUrl
                         tgUrlInput = globalSettings.tgUrl
                         referralRewardInput = globalSettings.referralReward.toString()
+                        referralMinDepositInput = globalSettings.referralMinDeposit.toString()
                     }
 
                     Column(
@@ -2575,13 +2695,31 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                 )
 
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                OutlinedTextField(
+                                    value = referralMinDepositInput,
+                                    onValueChange = { referralMinDepositInput = it },
+                                    label = { Text("Min Deposit for Referral Reward (₹)", color = Color.Gray) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = CyanGlow,
+                                        unfocusedBorderColor = BorderColor,
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
                                 Spacer(modifier = Modifier.height(16.dp))
 
                                 Button(
                                     onClick = {
                                         if (upiInput.isNotBlank()) {
                                             val rwd = referralRewardInput.toDoubleOrNull() ?: 50.0
-                                            viewModel.adminUpdateSettings(upiInput.trim(), waUrlInput.trim(), tgUrlInput.trim(), rwd)
+                                            val minDep = referralMinDepositInput.toDoubleOrNull() ?: 20.0
+                                            viewModel.adminUpdateSettings(upiInput.trim(), waUrlInput.trim(), tgUrlInput.trim(), rwd, minDep)
                                         } else {
                                             viewModel.showToast("UPI ID cannot be blank")
                                         }
@@ -2764,47 +2902,6 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                         }
                     }
 
-                    var uploadingPtTourId by remember { mutableStateOf<Int?>(null) }
-                    val pointTablePicker = androidx.activity.compose.rememberLauncherForActivityResult(
-                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
-                    ) { uri ->
-                        uri?.let {
-                            val helper = uriToBase64(context, it)
-                            val targetTourId = uploadingPtTourId
-                            if (helper != null && targetTourId != null) {
-                                val tour = tournaments.find { t -> t.id == targetTourId }
-                                if (tour != null) {
-                                    viewModel.showToast("Uploading points table image...")
-                                    viewModel.uploadPhoto(helper.first, "points_${targetTourId}_${System.currentTimeMillis()}.jpg", helper.second) { url ->
-                                        if (url != null) {
-                                            val baseRulesWithoutPt = tour.rules.substringBefore("\n\n--- Point Table ---\n")
-                                            val newRules = baseRulesWithoutPt + "\n\n--- Point Table ---\n" + url
-                                            viewModel.adminUpdateTournamentDetails(
-                                                id = tour.id,
-                                                game = tour.game,
-                                                title = tour.title,
-                                                posterRes = tour.posterRes,
-                                                entryFee = tour.entryFee,
-                                                prizePool = tour.prizePool,
-                                                prize1st = tour.prize1st,
-                                                prize2nd = tour.prize2nd,
-                                                prize3rd = tour.prize3rd,
-                                                prize4th = tour.prize4th,
-                                                rules = newRules,
-                                                startTime = tour.startTime
-                                            )
-                                            viewModel.showToast("Points table uploaded successfully!")
-                                        }
-                                    }
-                                }
-                            } else {
-                                viewModel.showToast("Failed to process picked image.")
-                            }
-                            uploadingPtTourId = null
-                        }
-                    }
-
-
                     Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -2940,44 +3037,40 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
 
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedTextField(
-                                        value = prize1st,
-                                        onValueChange = { prize1st = it },
-                                        label = { Text("1st", color = Color.Gray) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                         value = prize1st,
+                                         onValueChange = { prize1st = it },
+                                         label = { Text("1st Prize", color = Color.Gray) },
+                                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                         singleLine = true,
+                                         modifier = Modifier.weight(1f)
+                                     )
                                     OutlinedTextField(
-                                        value = prize2nd,
-                                        onValueChange = { prize2nd = it },
-                                        label = { Text("2nd", color = Color.Gray) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                         value = prize2nd,
+                                         onValueChange = { prize2nd = it },
+                                         label = { Text("2nd Prize", color = Color.Gray) },
+                                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                         singleLine = true,
+                                         modifier = Modifier.weight(1f)
+                                     )
                                 }
 
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedTextField(
-                                        value = prize3rd,
-                                        onValueChange = { prize3rd = it },
-                                        label = { Text("3rd", color = Color.Gray) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                         value = prize3rd,
+                                         onValueChange = { prize3rd = it },
+                                         label = { Text("3rd Prize", color = Color.Gray) },
+                                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                         singleLine = true,
+                                         modifier = Modifier.weight(1f)
+                                     )
                                     OutlinedTextField(
-                                        value = prize4th,
-                                        onValueChange = { prize4th = it },
-                                        label = { Text("4th", color = Color.Gray) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                         value = prize4th,
+                                         onValueChange = { prize4th = it },
+                                         label = { Text("4th Prize", color = Color.Gray) },
+                                         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                         singleLine = true,
+                                         modifier = Modifier.weight(1f)
+                                     )
                                 }
 
                                 Text("Extra Positions (Optional)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -3044,44 +3137,59 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                             return@Button
                                         }
                                         val maxCount = maxTeams.toIntOrNull() ?: 100
-                                        val extraPrizesStr = if (extraPrizesList.isNotEmpty()) {
-                                            "\n\n--- Extra Prizes ---\n" + extraPrizesList.filter { it.first.isNotBlank() }.joinToString("\n") { "${it.first}: ₹${it.second}" }
-                                        } else ""
-                                        val combinedRules = "Match Type: $matchType\nMax Teams allowed: $maxCount\n${rules}${extraPrizesStr}"
+                                         val extraPrizesStr = if (extraPrizesList.isNotEmpty()) {
+                                             "\n\n--- Extra Prizes ---\n" + extraPrizesList.filter { it.first.isNotBlank() }.joinToString("\n") { "${it.first}: ₹${it.second}" }
+                                         } else ""
+                                         
+                                         // Custom Rank Prizes Serialization
+                                         val customRankPrizesStr = "\n\n--- Custom Rank Prizes ---\n" +
+                                             "1st: $prize1st\n" +
+                                             "2nd: $prize2nd\n" +
+                                             "3rd: $prize3rd\n" +
+                                             "4th: $prize4th"
+                                             
+                                         val combinedRules = "Match Type: $matchType\nMax Teams allowed: $maxCount\n${rules}${extraPrizesStr}${customRankPrizesStr}"
 
-                                        if (editingTourId != null) {
-                                            viewModel.adminUpdateTournamentDetails(
-                                                id = editingTourId!!,
-                                                game = game,
-                                                title = title,
-                                                posterRes = posterUrl,
-                                                entryFee = entryFee.toDoubleOrNull() ?: 0.0,
-                                                prizePool = prizePool.toDoubleOrNull() ?: 0.0,
-                                                prize1st = prize1st.toDoubleOrNull() ?: 0.0,
-                                                prize2nd = prize2nd.toDoubleOrNull() ?: 0.0,
-                                                prize3rd = prize3rd.toDoubleOrNull() ?: 0.0,
-                                                prize4th = prize4th.toDoubleOrNull() ?: 0.0,
-                                                rules = combinedRules,
-                                                startTime = startTime
-                                            )
-                                        } else {
-                                            viewModel.adminCreateTournament(
-                                                Tournament(
-                                                    game = game,
-                                                    title = title,
-                                                    posterRes = posterUrl.ifBlank { game.lowercase() },
-                                                    entryFee = entryFee.toDoubleOrNull() ?: 0.0,
-                                                    prizePool = prizePool.toDoubleOrNull() ?: 0.0,
-                                                    prize1st = prize1st.toDoubleOrNull() ?: 0.0,
-                                                    prize2nd = prize2nd.toDoubleOrNull() ?: 0.0,
-                                                    prize3rd = prize3rd.toDoubleOrNull() ?: 0.0,
-                                                    prize4th = prize4th.toDoubleOrNull() ?: 0.0,
-                                                    rules = combinedRules,
-                                                    startTime = startTime
-                                                )
-                                            )
-                                        }
-                                        createMode = false
+                                         // Extract numeric values for DB compatibility
+                                         fun extractNum(t: String): Double {
+                                             val regex = """\\d+""".toRegex()
+                                             val match = regex.find(t)
+                                             return match?.value?.toDoubleOrNull() ?: 0.0
+                                         }
+
+                                         if (editingTourId != null) {
+                                             viewModel.adminUpdateTournamentDetails(
+                                                 id = editingTourId!!,
+                                                 game = game,
+                                                 title = title,
+                                                 posterRes = posterUrl,
+                                                 entryFee = entryFee.toDoubleOrNull() ?: 0.0,
+                                                 prizePool = prizePool.toDoubleOrNull() ?: 0.0,
+                                                 prize1st = extractNum(prize1st),
+                                                 prize2nd = extractNum(prize2nd),
+                                                 prize3rd = extractNum(prize3rd),
+                                                 prize4th = extractNum(prize4th),
+                                                 rules = combinedRules,
+                                                 startTime = startTime
+                                             )
+                                         } else {
+                                             viewModel.adminCreateTournament(
+                                                 Tournament(
+                                                     game = game,
+                                                     title = title,
+                                                     posterRes = posterUrl.ifBlank { game.lowercase() },
+                                                     entryFee = entryFee.toDoubleOrNull() ?: 0.0,
+                                                     prizePool = prizePool.toDoubleOrNull() ?: 0.0,
+                                                     prize1st = extractNum(prize1st),
+                                                     prize2nd = extractNum(prize2nd),
+                                                     prize3rd = extractNum(prize3rd),
+                                                     prize4th = extractNum(prize4th),
+                                                     rules = combinedRules,
+                                                     startTime = startTime
+                                                 )
+                                             )
+                                         }
+                                         createMode = false
                                         editingTourId = null
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
@@ -3126,67 +3234,67 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                             posterUrl = tour.posterRes
                                                             entryFee = tour.entryFee.toString()
                                                             prizePool = tour.prizePool.toString()
-                                                            prize1st = tour.prize1st.toString()
-                                                            prize2nd = tour.prize2nd.toString()
-                                                            prize3rd = tour.prize3rd.toString()
-                                                            prize4th = tour.prize4th.toString()
-                                                            startTime = tour.startTime
+                                                            // Extract custom rank prizes if present
+                                                             val customRankPrizes = tour.getCustomRankPrizes()
+                                                             if (customRankPrizes != null) {
+                                                                 prize1st = customRankPrizes["1st"] ?: ""
+                                                                 prize2nd = customRankPrizes["2nd"] ?: ""
+                                                                 prize3rd = customRankPrizes["3rd"] ?: ""
+                                                                 prize4th = customRankPrizes["4th"] ?: ""
+                                                             } else {
+                                                                 prize1st = tour.prize1st.toString()
+                                                                 prize2nd = tour.prize2nd.toString()
+                                                                 prize3rd = tour.prize3rd.toString()
+                                                                 prize4th = tour.prize4th.toString()
+                                                             }
+                                                             startTime = tour.startTime
 
-                                                            // Extract max teams if formatted
-                                                            val regex = "Max Teams allowed: (\\d+)".toRegex()
-                                                            val match = regex.find(tour.rules)
-                                                            var parsedRules = tour.rules
-                                                            if (match != null) {
-                                                                maxTeams = match.groupValues[1]
-                                                                parsedRules = tour.rules.replace("Max Teams allowed: ${maxTeams}\n", "")
-                                                            } else {
-                                                                maxTeams = ""
-                                                            }
-                                                            
-                                                            val matchTypeMatch = "Match Type: (Solo|Duo|Squad)".toRegex().find(parsedRules)
-                                                            if (matchTypeMatch != null) {
-                                                                matchType = matchTypeMatch.groupValues[1]
-                                                                parsedRules = parsedRules.replace("Match Type: $matchType\n", "")
-                                                            } else {
-                                                                matchType = "Squad"
-                                                            }
+                                                             // Extract max teams if formatted
+                                                             val regex = "Max Teams allowed: (\\d+)".toRegex()
+                                                             val match = regex.find(tour.rules)
+                                                             var parsedRules = tour.rules
+                                                             if (match != null) {
+                                                                 maxTeams = match.groupValues[1]
+                                                                 parsedRules = tour.rules.replace("Max Teams allowed: ${maxTeams}\n", "")
+                                                             } else {
+                                                                 maxTeams = ""
+                                                             }
+                                                             
+                                                             val matchTypeMatch = "Match Type: (Solo|Duo|Squad)".toRegex().find(parsedRules)
+                                                             if (matchTypeMatch != null) {
+                                                                 matchType = matchTypeMatch.groupValues[1]
+                                                                 parsedRules = parsedRules.replace("Match Type: $matchType\n", "")
+                                                             } else {
+                                                                 matchType = "Squad"
+                                                             }
 
-                                                            // Strip point table link if editing
-                                                            val baseRulesWithoutPt = parsedRules.substringBefore("\n\n--- Point Table ---\n")
+                                                             // Strip point table link if editing
+                                                             val baseRulesWithoutPt = parsedRules.substringBefore("\n\n--- Point Table ---\n")
 
-                                                            val parts = baseRulesWithoutPt.split("\n\n--- Extra Prizes ---\n")
-                                                            if (parts.size > 1) {
-                                                                rules = parts[0]
-                                                                extraPrizesList = parts[1].split("\n").map { line ->
-                                                                    val p = line.split(": ₹")
-                                                                    if (p.size == 2) p[0] to p[1] else "" to ""
-                                                                }.filter { it.first.isNotBlank() }
-                                                            } else {
-                                                                rules = baseRulesWithoutPt
-                                                                extraPrizesList = emptyList()
-                                                            }
+                                                             // Strip custom rank prizes if editing
+                                                             val baseRulesWithoutCustom = baseRulesWithoutPt.substringBefore("\n\n--- Custom Rank Prizes ---\n")
+
+                                                             val parts = baseRulesWithoutCustom.split("\n\n--- Extra Prizes ---\n")
+                                                             if (parts.size > 1) {
+                                                                 rules = parts[0]
+                                                                 extraPrizesList = parts[1].split("\n").map { line ->
+                                                                     val p = line.split(": ₹")
+                                                                     if (p.size == 2) p[0] to p[1] else "" to ""
+                                                                 }.filter { it.first.isNotBlank() }
+                                                             } else {
+                                                                 rules = baseRulesWithoutCustom
+                                                                 extraPrizesList = emptyList()
+                                                             }
                                                         },
-                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                                        border = BorderStroke(1.dp, BorderColor),
-                                                        modifier = Modifier.weight(1f)
-                                                    ) {
-                                                        Text("Edit", fontSize = 11.sp)
-                                                    }
+                                                                                                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                                         border = BorderStroke(1.dp, BorderColor),
+                                                         modifier = Modifier.weight(1f)
+                                                     ) {
+                                                         Text("Edit", fontSize = 11.sp)
+                                                     }
 
-                                                    Button(
-                                                        onClick = {
-                                                            uploadingPtTourId = tour.id
-                                                            pointTablePicker.launch("image/*")
-                                                        },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow.copy(alpha = 0.15f), contentColor = CyanGlow),
-                                                        border = BorderStroke(1.dp, CyanGlow),
-                                                        modifier = Modifier.weight(1.2f)
-                                                    ) {
-                                                        Text("PT Upload", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                    }
-
-                                                    Button(
-                                                        onClick = { viewModel.adminDeleteTournament(tour.id) },
+                                                     Button(
+                                                         onClick = { viewModel.adminDeleteTournament(tour.id) },
                                                         colors = ButtonDefaults.buttonColors(containerColor = RedGlow),
                                                         modifier = Modifier.weight(1f)
                                                     ) {
@@ -3209,6 +3317,48 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                     var toSlotText by remember { mutableStateOf("") }
                     var roomIdText by remember { mutableStateOf("") }
                     var roomPassText by remember { mutableStateOf("") }
+
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    var uploadingPtTourId by remember { mutableStateOf<Int?>(null) }
+                    val pointTablePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            val helper = uriToBase64(context, it)
+                            val targetTourId = uploadingPtTourId
+                            if (helper != null && targetTourId != null) {
+                                val tour = tournaments.find { t -> t.id == targetTourId }
+                                if (tour != null) {
+                                    viewModel.showToast("Uploading points table image...")
+                                    viewModel.uploadPhoto(helper.first, "points_${targetTourId}_${System.currentTimeMillis()}.jpg", helper.second) { url ->
+                                        if (url != null) {
+                                            val baseRulesWithoutPt = tour.rules.substringBefore("\n\n--- Point Table ---\n")
+                                            val newRules = baseRulesWithoutPt + "\n\n--- Point Table ---\n" + url
+                                            viewModel.adminUpdateTournamentDetails(
+                                                id = tour.id,
+                                                game = tour.game,
+                                                title = tour.title,
+                                                posterRes = tour.posterRes,
+                                                entryFee = tour.entryFee,
+                                                prizePool = tour.prizePool,
+                                                prize1st = tour.prize1st,
+                                                prize2nd = tour.prize2nd,
+                                                prize3rd = tour.prize3rd,
+                                                prize4th = tour.prize4th,
+                                                rules = newRules,
+                                                startTime = tour.startTime
+                                            )
+                                            selectedTourForTeams = tour.copy(rules = newRules)
+                                            viewModel.showToast("Points table uploaded successfully!")
+                                        }
+                                    }
+                                }
+                            } else {
+                                viewModel.showToast("Failed to process picked image.")
+                            }
+                            uploadingPtTourId = null
+                        }
+                    }
 
                     Column(
                         modifier = Modifier.fillMaxSize()
@@ -3244,118 +3394,228 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                         Spacer(modifier = Modifier.height(12.dp))
 
                         selectedTourForTeams?.let { tour ->
-                            Text("Tournament ID: ${tour.id} - ${tour.title}", color = CyanGlow, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text("Total Teams Joined: ${currentRegistrations.size}", color = Color.White, fontSize = 12.sp)
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Room Details updater
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = CardBg),
-                                modifier = Modifier.fillMaxWidth()
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("Declare Room Details", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                item {
+                                    Text("Tournament ID: ${tour.id} - ${tour.title}", color = CyanGlow, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("Total Teams Joined: ${currentRegistrations.size}", color = Color.White, fontSize = 12.sp)
+                                }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        OutlinedTextField(
-                                            value = roomIdText,
-                                            onValueChange = { roomIdText = it },
-                                            label = { Text("Room ID", fontSize = 11.sp, color = Color.Gray) },
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        OutlinedTextField(
-                                            value = roomPassText,
-                                            onValueChange = { roomPassText = it },
-                                            label = { Text("Password", fontSize = 11.sp, color = Color.Gray) },
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Button(
-                                        onClick = {
-                                            viewModel.adminUpdateTournament(tour.id, roomIdText, roomPassText, tour.startTime)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
+                                // Room Details updater
+                                item {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = CardBg),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("Update Room Details", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text("Declare Room Details", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = roomIdText,
+                                                    onValueChange = { roomIdText = it },
+                                                    label = { Text("Room ID", fontSize = 11.sp, color = Color.Gray) },
+                                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+
+                                                OutlinedTextField(
+                                                    value = roomPassText,
+                                                    onValueChange = { roomPassText = it },
+                                                    label = { Text("Password", fontSize = 11.sp, color = Color.Gray) },
+                                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                            Button(
+                                                onClick = {
+                                                    viewModel.adminUpdateTournament(tour.id, roomIdText, roomPassText, tour.startTime)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("Update Room Details", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            }
+                                        }
                                     }
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Slot range updater
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = CardBg),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("Bulk Assign Unique Slots Range", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        OutlinedTextField(
-                                            value = fromSlotText,
-                                            onValueChange = { fromSlotText = it },
-                                            label = { Text("From Slot", fontSize = 11.sp, color = Color.Gray) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        OutlinedTextField(
-                                            value = toSlotText,
-                                            onValueChange = { toSlotText = it },
-                                            label = { Text("To Slot", fontSize = 11.sp, color = Color.Gray) },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Button(
-                                        onClick = {
-                                            val from = fromSlotText.toIntOrNull() ?: 1
-                                            val to = toSlotText.toIntOrNull() ?: 100
-                                            viewModel.adminAssignSlots(tour.id, from, to)
-                                            fromSlotText = ""
-                                            toSlotText = ""
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                                // Slot range updater
+                                item {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = CardBg),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("Assign Slots Range", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text("Bulk Assign Unique Slots Range", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = fromSlotText,
+                                                    onValueChange = { fromSlotText = it },
+                                                    label = { Text("From Slot", fontSize = 11.sp, color = Color.Gray) },
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+
+                                                OutlinedTextField(
+                                                    value = toSlotText,
+                                                    onValueChange = { toSlotText = it },
+                                                    label = { Text("To Slot", fontSize = 11.sp, color = Color.Gray) },
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                            Button(
+                                                onClick = {
+                                                    val from = fromSlotText.toIntOrNull() ?: 1
+                                                    val to = toSlotText.toIntOrNull() ?: 100
+                                                    viewModel.adminAssignSlots(tour.id, from, to)
+                                                    fromSlotText = ""
+                                                    toSlotText = ""
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("Assign Slots Range", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            }
+                                        }
                                     }
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                // Point Table manager inside Teams & Rewards section
+                                item {
+                                    val pointsTableUrl = tour.rules.substringAfter("\n\n--- Point Table ---\n", "").ifBlank { null }
 
-                            if (currentRegistrations.isEmpty()) {
-                                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    Text("No teams have joined this tournament yet", color = Color.Gray, fontSize = 12.sp)
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = CardBg),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text("📊 Tournament Point Table", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.height(8.dp))
+
+                                            if (pointsTableUrl != null) {
+                                                coil.compose.SubcomposeAsyncImage(
+                                                    model = pointsTableUrl,
+                                                    contentDescription = "Current Point Table",
+                                                    loading = {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(150.dp),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            CircularProgressIndicator(color = CyanGlow)
+                                                        }
+                                                    },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .heightIn(max = 180.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(60.dp)
+                                                        .background(DarkBg.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                                        .border(1.dp, BorderColor, RoundedCornerShape(6.dp)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        "No point table image uploaded yet.",
+                                                        color = Color.Gray,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                            }
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        uploadingPtTourId = tour.id
+                                                        pointTablePicker.launch("image/*")
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Text(
+                                                        text = if (pointsTableUrl == null) "Upload Point Table" else "Change Image",
+                                                        color = DarkBg,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+
+                                                if (pointsTableUrl != null) {
+                                                    Button(
+                                                        onClick = {
+                                                            val baseRulesWithoutPt = tour.rules.substringBefore("\n\n--- Point Table ---\n")
+                                                            viewModel.adminUpdateTournamentDetails(
+                                                                id = tour.id,
+                                                                game = tour.game,
+                                                                title = tour.title,
+                                                                posterRes = tour.posterRes,
+                                                                entryFee = tour.entryFee,
+                                                                prizePool = tour.prizePool,
+                                                                prize1st = tour.prize1st,
+                                                                prize2nd = tour.prize2nd,
+                                                                prize3rd = tour.prize3rd,
+                                                                prize4th = tour.prize4th,
+                                                                rules = baseRulesWithoutPt,
+                                                                startTime = tour.startTime
+                                                            )
+                                                            selectedTourForTeams = tour.copy(rules = baseRulesWithoutPt)
+                                                            viewModel.showToast("Points table removed successfully!")
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = RedGlow),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Text("Remove", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                            } else {
-                                LazyColumn(
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f).fillMaxWidth()
-                                ) {
+
+                                item {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("🏆 Prize Distribution & Joined Teams", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+
+                                if (currentRegistrations.isEmpty()) {
+                                    item {
+                                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                                            Text("No teams have joined this tournament yet", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                    }
+                                } else {
                                     items(currentRegistrations) { reg ->
                                         // Decode formatted details
                                         val parts = reg.whatsappNumber.split("|")
@@ -3521,26 +3781,39 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     Text("Rank Prizes Structure:", fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 12.sp)
-                                    Text("- 1st Prize Winner: ₹${tour.prize1st}", color = Color.Gray, fontSize = 11.sp)
-                                    Text("- 2nd Prize Winner: ₹${tour.prize2nd}", color = Color.Gray, fontSize = 11.sp)
-                                    Text("- 3rd Prize Winner: ₹${tour.prize3rd}", color = Color.Gray, fontSize = 11.sp)
-                                    Text("- 4th Prize Winner: ₹${tour.prize4th}", color = Color.Gray, fontSize = 11.sp)
-                                    
-                                    val parts = tour.rules.split("\n\n--- Extra Prizes ---\n")
-                                    if (parts.size > 1) {
-                                        parts[1].split("\n").forEach { line ->
-                                            if (line.isNotBlank()) {
-                                                Text("- $line", color = Color.Gray, fontSize = 11.sp)
-                                            }
-                                        }
-                                    }
+                                     val customRankPrizes = tour.getCustomRankPrizes()
+                                     if (customRankPrizes != null) {
+                                         val p1 = customRankPrizes["1st"] ?: ""
+                                         val p2 = customRankPrizes["2nd"] ?: ""
+                                         val p3 = customRankPrizes["3rd"] ?: ""
+                                         val p4 = customRankPrizes["4th"] ?: ""
+                                         if (p1.isNotBlank()) Text("- 1st Prize Winner: $p1", color = Color.Gray, fontSize = 11.sp)
+                                         if (p2.isNotBlank()) Text("- 2nd Prize Winner: $p2", color = Color.Gray, fontSize = 11.sp)
+                                         if (p3.isNotBlank()) Text("- 3rd Prize Winner: $p3", color = Color.Gray, fontSize = 11.sp)
+                                         if (p4.isNotBlank()) Text("- 4th Prize Winner: $p4", color = Color.Gray, fontSize = 11.sp)
+                                     } else {
+                                         Text("- 1st Prize Winner: ₹${tour.prize1st}", color = Color.Gray, fontSize = 11.sp)
+                                         Text("- 2nd Prize Winner: ₹${tour.prize2nd}", color = Color.Gray, fontSize = 11.sp)
+                                         Text("- 3rd Prize Winner: ₹${tour.prize3rd}", color = Color.Gray, fontSize = 11.sp)
+                                         Text("- 4th Prize Winner: ₹${tour.prize4th}", color = Color.Gray, fontSize = 11.sp)
+                                     }
+                                     
+                                     val parts = tour.rules.split("\n\n--- Extra Prizes ---\n")
+                                     if (parts.size > 1) {
+                                         val extraPart = parts[1].substringBefore("\n\n--- Custom Rank Prizes ---\n").substringBefore("\n\n--- Point Table ---\n")
+                                         extraPart.split("\n").forEach { line ->
+                                             if (line.isNotBlank()) {
+                                                 Text("- $line", color = Color.Gray, fontSize = 11.sp)
+                                             }
+                                         }
+                                     }
 
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    HorizontalDivider(color = BorderColor)
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                     Spacer(modifier = Modifier.height(6.dp))
+                                     HorizontalDivider(color = BorderColor)
+                                     Spacer(modifier = Modifier.height(6.dp))
 
-                                    Text("Rules and Terms:", fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 12.sp)
-                                    Text(if (parts.size > 1) parts[0] else tour.rules, color = Color.Gray, fontSize = 11.sp)
+                                     Text("Rules and Terms:", fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 12.sp)
+                                     Text(tour.getCleanedRules(), color = Color.Gray, fontSize = 11.sp)
                                 }
                             }
                         }
@@ -3819,6 +4092,233 @@ fun uriToBase64(context: android.content.Context, uri: android.net.Uri): Pair<St
     } catch (e: java.lang.Exception) {
         e.printStackTrace()
         null
+    }
+}
+
+
+@Composable
+fun ReferralDetailsScreen(viewModel: MainViewModel) {
+    val user by viewModel.loggedInUser.collectAsStateWithLifecycle()
+    val referredUsers by viewModel.referredUsers.collectAsStateWithLifecycle()
+    val totalCount by viewModel.referredTotalCount.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoadingReferred.collectAsStateWithLifecycle()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val globalSettings by viewModel.globalSettings.collectAsStateWithLifecycle()
+
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val isScrollAtEnd = remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val visibleItemsInfo = layoutInfo.visibleItemsInfo
+            if (layoutInfo.totalItemsCount == 0) {
+                false
+            } else {
+                val lastVisibleItem = visibleItemsInfo.lastOrNull()
+                lastVisibleItem != null && lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
+            }
+        }
+    }
+
+    LaunchedEffect(isScrollAtEnd.value) {
+        if (isScrollAtEnd.value) {
+            viewModel.loadMoreReferredUsers()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { viewModel.setScreen("home") }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Referral Details",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        // Referral Code Card & Total Joined Stat
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBg),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            border = BorderStroke(1.dp, BorderColor)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Your Referral Code",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(DarkBg, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .border(1.dp, PurpleGlow, RoundedCornerShape(8.dp))
+                ) {
+                    Text(
+                        text = user?.ownReferralCode ?: "CODE1234",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = PurpleGlow,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(user?.ownReferralCode ?: ""))
+                            viewModel.showToast("Referral Code copied!")
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Code", tint = PurpleGlow, modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Total Joined Users",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Joined under your code",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    Text(
+                        text = "$totalCount Joined",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = CyanGlow
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "Joined User Details (Rule: Min ₹${globalSettings.referralMinDeposit} deposit)",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        // Paginated List of referred users
+        androidx.compose.foundation.lazy.LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(referredUsers) { refUser ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, BorderColor)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Gamer: ${refUser.name}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "WhatsApp: ${refUser.maskedWhatsapp}",
+                                fontSize = 12.sp,
+                                color = Color.LightGray
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Joined: ${if (refUser.createdAt.length >= 10) refUser.createdAt.take(10) else refUser.createdAt}",
+                                fontSize = 10.sp,
+                                color = Color.Gray
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Deposited Amount",
+                                fontSize = 10.sp,
+                                color = Color.Gray
+                            )
+                            Text(
+                                text = "₹${String.format("%.2f", refUser.totalDeposited)}",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (refUser.totalDeposited >= globalSettings.referralMinDeposit) EmeraldGlow else Color.Gray
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (isLoading) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(color = PurpleGlow, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+
+            if (!isLoading && referredUsers.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No referred users found yet.",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

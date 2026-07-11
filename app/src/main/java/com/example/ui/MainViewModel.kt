@@ -71,6 +71,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentScreen = MutableStateFlow<String>("splash") // splash, auth, home, admin
     val currentScreen: StateFlow<String> = _currentScreen.asStateFlow()
 
+    // Referrals States
+    private val _referredUsers = MutableStateFlow<List<com.example.data.ReferredUser>>(emptyList())
+    val referredUsers: StateFlow<List<com.example.data.ReferredUser>> = _referredUsers.asStateFlow()
+
+    private val _referredTotalCount = MutableStateFlow(0)
+    val referredTotalCount: StateFlow<Int> = _referredTotalCount.asStateFlow()
+
+    private val _isLoadingReferred = MutableStateFlow(false)
+    val isLoadingReferred: StateFlow<Boolean> = _isLoadingReferred.asStateFlow()
+
+    private var currentReferredPage = 1
+    private var isLastReferredPage = false
+
+    fun loadInitialReferredUsers() {
+        val user = loggedInUser.value ?: return
+        viewModelScope.launch {
+            _isLoadingReferred.value = true
+            currentReferredPage = 1
+            isLastReferredPage = false
+            val response = repository.getReferredUsers(user.whatsappNumber, page = 1, limit = 20)
+            if (response.success) {
+                _referredUsers.value = response.users
+                _referredTotalCount.value = response.total
+                if (response.users.size < 20) {
+                    isLastReferredPage = true
+                }
+            } else {
+                _referredUsers.value = emptyList()
+                _referredTotalCount.value = 0
+                isLastReferredPage = true
+            }
+            _isLoadingReferred.value = false
+        }
+    }
+
+    fun loadMoreReferredUsers() {
+        val user = loggedInUser.value ?: return
+        if (_isLoadingReferred.value || isLastReferredPage) return
+        viewModelScope.launch {
+            _isLoadingReferred.value = true
+            val nextPage = currentReferredPage + 1
+            val response = repository.getReferredUsers(user.whatsappNumber, page = nextPage, limit = 20)
+            if (response.success) {
+                if (response.users.isNotEmpty()) {
+                    currentReferredPage = nextPage
+                    _referredUsers.value = _referredUsers.value + response.users
+                }
+                _referredTotalCount.value = response.total
+                if (response.users.size < 20) {
+                    isLastReferredPage = true
+                }
+            } else {
+                isLastReferredPage = true
+            }
+            _isLoadingReferred.value = false
+        }
+    }
+
     // Fallback local memory for joined tournaments (until backend redeploy takes effect)
     private val localJoinedIds = mutableSetOf<Int>()
 
@@ -131,6 +189,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setScreen(screen: String) {
         if (screen == "history") {
             loadHistory()
+        }
+        if (screen == "referral_details") {
+            loadInitialReferredUsers()
         }
         _currentScreen.value = screen
     }
@@ -363,9 +424,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?) {
+    fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?, referralMinDeposit: Double?) {
         viewModelScope.launch {
-            val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward)
+            val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit)
             if (ok) {
                 _toastMessage.value = "Settings updated!"
                 refreshOnlineData()

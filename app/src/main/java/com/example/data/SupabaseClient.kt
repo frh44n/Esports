@@ -373,6 +373,45 @@ object SupabaseClient {
         }
     }
 
+    fun fetchReferredUsers(whatsapp: String, page: Int, limit: Int): ReferredUsersResponse {
+        val url = "${getServerUrl()}/api/users/$whatsapp/referred-users?page=$page&limit=$limit"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    val success = jsonObj.optBoolean("success", false)
+                    val total = jsonObj.optInt("total", 0)
+                    val jsonArr = jsonObj.optJSONArray("users") ?: JSONArray()
+                    val list = mutableListOf<ReferredUser>()
+                    for (i in 0 until jsonArr.length()) {
+                        val obj = jsonArr.optJSONObject(i)
+                        if (obj != null) {
+                            list.add(
+                                ReferredUser(
+                                    maskedWhatsapp = obj.optString("maskedWhatsapp", ""),
+                                    name = obj.optString("name", ""),
+                                    totalDeposited = obj.optDouble("totalDeposited", 0.0),
+                                    createdAt = obj.optString("createdAt", "")
+                                )
+                            )
+                        }
+                    }
+                    ReferredUsersResponse(success = success, total = total, users = list)
+                } else {
+                    ReferredUsersResponse(success = false, total = 0, users = emptyList())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchReferredUsers error", e)
+            ReferredUsersResponse(success = false, total = 0, users = emptyList())
+        }
+    }
+
     fun fetchAllTransactionsAdmin(): List<Transaction> {
         val url = "${getServerUrl()}/api/admin/transactions"
         val request = Request.Builder()
@@ -579,7 +618,8 @@ object SupabaseClient {
                             upiId = settingsObj.optString("upi_id", "pay.arenaesports@upi"),
                             waUrl = settingsObj.optString("wa_url", "https://wa.me/919999999999"),
                             tgUrl = settingsObj.optString("tg_url", "https://t.me/arenaesportssupport"),
-                            referralReward = settingsObj.optDouble("referral_reward", 50.0)
+                            referralReward = settingsObj.optDouble("referral_reward", 50.0),
+                            referralMinDeposit = settingsObj.optDouble("referral_min_deposit", 20.0)
                         )
                     } else {
                         GlobalSettings()
@@ -594,13 +634,20 @@ object SupabaseClient {
         }
     }
 
-    fun updateGlobalSettings(upiId: String? = null, waUrl: String? = null, tgUrl: String? = null, referralReward: Double? = null): Boolean {
+    fun updateGlobalSettings(
+        upiId: String? = null,
+        waUrl: String? = null,
+        tgUrl: String? = null,
+        referralReward: Double? = null,
+        referralMinDeposit: Double? = null
+    ): Boolean {
         val url = "${getServerUrl()}/api/settings"
         val bodyJson = JSONObject().apply {
             upiId?.let { put("upi_id", it) }
             waUrl?.let { put("wa_url", it) }
             tgUrl?.let { put("tg_url", it) }
             referralReward?.let { put("referral_reward", it) }
+            referralMinDeposit?.let { put("referral_min_deposit", it) }
         }
         val request = Request.Builder()
             .url(url)
@@ -828,33 +875,35 @@ object SupabaseClient {
     }
 
     fun uploadPhoto(base64Image: String, filename: String, mimeType: String): Result<String> {
-        val url = "${getServerUrl()}/api/upload"
-        val bodyJson = JSONObject().apply {
-            put("image", base64Image)
-            put("filename", filename)
-            put("mimeType", mimeType)
+        val cleanFilename = "${System.currentTimeMillis()}_${filename.replace("[^a-zA-Z0-9._-]".toRegex(), "")}"
+        val url = "${BuildConfig.SUPABASE_URL}/storage/v1/object/esports_images/$cleanFilename"
+        val bytes = try {
+            android.util.Base64.decode(base64Image, android.util.Base64.DEFAULT)
+        } catch (e: Exception) {
+            return Result.failure(Exception("Failed to decode base64: ${e.message}"))
         }
 
+        val requestBody = bytes.toRequestBody(mimeType.toMediaType())
         val request = Request.Builder()
             .url(url)
-            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .header("Authorization", "Bearer ${BuildConfig.SUPABASE_SECRET_KEY}")
+            .header("apiKey", BuildConfig.SUPABASE_SECRET_KEY)
+            .post(requestBody)
             .build()
 
         return try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d(TAG, "uploadPhoto response code: ${response.code}")
+                Log.d(TAG, "uploadPhoto direct response code: ${response.code}, body: $bodyStr")
                 if (response.isSuccessful) {
-                    val jsonObj = JSONObject(bodyStr)
-                    val imageUrl = jsonObj.getString("url")
-                    Result.success(imageUrl)
+                    val publicUrl = "${BuildConfig.SUPABASE_URL}/storage/v1/object/public/esports_images/$cleanFilename"
+                    Result.success(publicUrl)
                 } else {
-                    val errMsg = parseError(bodyStr) ?: "Upload failed (Code: ${response.code})"
-                    Result.failure(Exception(errMsg))
+                    Result.failure(Exception("Direct upload failed (Code: ${response.code}): $bodyStr"))
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "uploadPhoto error", e)
+            Log.e(TAG, "uploadPhoto direct error", e)
             Result.failure(e)
         }
     }

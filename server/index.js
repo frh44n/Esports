@@ -217,10 +217,7 @@ app.post('/api/auth/signup', async (req, res) => {
       throw profileError;
     }
 
-    // 3. Trigger Referral Reward if code was used
-    if (referral_code) {
-      await handleReferralReward(referral_code, whatsapp);
-    }
+    // 3. Referral Reward is now given only when the referred user deposits a minimum amount.
 
     // 4. Log device registration
     if (device_id) {
@@ -703,6 +700,89 @@ app.get('/api/users/:whatsapp/transactions', async (req, res) => {
 });
 
 
+// Fetch paginated referred users for a given WhatsApp number
+app.get('/api/users/:whatsapp/referred-users', async (req, res) => {
+  try {
+    const { whatsapp } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const start = (page - 1) * limit;
+    const end = start + limit - 1;
+
+    // 1. Fetch user to get their own_referral_code
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('own_referral_code')
+      .eq('whatsapp_number', whatsapp)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const code = user.own_referral_code;
+    if (!code) {
+      return res.json({ success: true, total: 0, users: [] });
+    }
+
+    // 2. Fetch total count of referred users
+    const { count, error: countErr } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('referral_code_used', code);
+
+    if (countErr) throw countErr;
+
+    // 3. Fetch referred profiles with pagination
+    const { data: profiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('whatsapp_number, name, created_at')
+      .eq('referral_code_used', code)
+      .order('created_at', { ascending: false })
+      .range(start, end);
+
+    if (profErr) throw profErr;
+
+    // 4. For each profile, fetch total approved deposits
+    const usersWithDeposits = [];
+    for (const p of (profiles || [])) {
+      const { data: txs, error: txsErr } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('whatsapp_number', p.whatsapp_number)
+        .eq('type', 'DEPOSIT')
+        .eq('status', 'APPROVED');
+
+      let totalDeposited = 0.0;
+      if (!txsErr && txs) {
+        totalDeposited = txs.reduce((sum, t) => sum + (t.amount || 0.0), 0.0);
+      }
+
+      // Mask WhatsApp: show only last 4 digits (e.g. ******1234)
+      const wa = p.whatsapp_number || "";
+      const last4 = wa.length >= 4 ? wa.substring(wa.length - 4) : wa;
+      const maskedWa = "*".repeat(Math.max(0, wa.length - 4)) + last4;
+
+      usersWithDeposits.push({
+        maskedWhatsapp: maskedWa,
+        name: p.name,
+        totalDeposited: totalDeposited,
+        createdAt: p.created_at
+      });
+    }
+
+    res.json({
+      success: true,
+      total: count || 0,
+      users: usersWithDeposits
+    });
+  } catch (error) {
+    console.error("Error fetching referred users:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 app.get('/api/admin/stats', async (req, res) => {
   try {
     const { data: users, error: usersErr } = await supabase.from('profiles').select('created_at');
@@ -868,6 +948,15 @@ app.patch('/api/transactions/:id/status', async (req, res) => {
           .eq('id', user.id);
 
         if (balanceError) throw balanceError;
+
+        // Process referral reward if user used a referral code and deposit >= min_deposit
+        if (user.referral_code_used) {
+          const settings = getGlobalSettings();
+          const minDeposit = settings.referral_min_deposit !== undefined ? parseFloat(settings.referral_min_deposit) : 20.0;
+          if (tx.amount >= minDeposit) {
+            await handleReferralReward(user.referral_code_used, tx.whatsapp_number);
+          }
+        }
       }
       // For WITHDRAWAL, the balance was already deducted upon submission.
     } else if (status === 'REJECTED') {
@@ -1038,7 +1127,8 @@ function getGlobalSettings() {
     upi_id: "pay.arenaesports@upi",
     wa_url: "https://wa.me/919999999999",
     tg_url: "https://t.me/arenaesportssupport",
-    referral_reward: 50.0
+    referral_reward: 50.0,
+    referral_min_deposit: 20.0
   };
   try {
     if (fs.existsSync(configFilePath)) {
@@ -1074,12 +1164,13 @@ app.get('/api/settings', (req, res) => {
 
 // Update global config (Admin)
 app.post('/api/settings', (req, res) => {
-  const { upi_id, wa_url, tg_url, referral_reward } = req.body;
+  const { upi_id, wa_url, tg_url, referral_reward, referral_min_deposit } = req.body;
   const updates = {};
   if (upi_id && upi_id.trim().length > 0) updates.upi_id = upi_id.trim();
   if (wa_url && wa_url.trim().length > 0) updates.wa_url = wa_url.trim();
   if (tg_url && tg_url.trim().length > 0) updates.tg_url = tg_url.trim();
   if (referral_reward !== undefined) updates.referral_reward = parseFloat(referral_reward) || 0;
+  if (referral_min_deposit !== undefined) updates.referral_min_deposit = parseFloat(referral_min_deposit) || 0;
   
   const success = saveGlobalSettings(updates);
   if (success) {
@@ -1370,6 +1461,19 @@ app.patch('/api/tournaments/:id', async (req, res) => {
 // ==========================================
 async function handleReferralReward(referrerCode, referredWhatsapp) {
   try {
+    // Check if we have already rewarded this referral
+    const { data: existingTx, error: txCheckErr } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('type', 'REFERRAL_REWARD')
+      .eq('reference_number', `REF-${referredWhatsapp}`)
+      .maybeSingle();
+
+    if (existingTx) {
+      console.log(`Referral reward already processed for referring ${referredWhatsapp}`);
+      return;
+    }
+
     // 1. Fetch referrer profile
     const { data: referrer, error: refError } = await supabase
       .from('profiles')

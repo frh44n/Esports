@@ -159,6 +159,13 @@ class AppRepository(private val appDao: AppDao) {
     }
 
     /**
+     * Fetch paginated referred users list
+     */
+    suspend fun getReferredUsers(whatsappNumber: String, page: Int, limit: Int): ReferredUsersResponse = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchReferredUsers(whatsappNumber, page, limit)
+    }
+
+    /**
      * Fetch all transactions for admin online
      */
     suspend fun getAllTransactionsAdmin(): List<Transaction> = withContext(Dispatchers.IO) {
@@ -230,8 +237,14 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.fetchGlobalSettings()
     }
 
-    suspend fun updateGlobalSettings(upiId: String? = null, waUrl: String? = null, tgUrl: String? = null, referralReward: Double? = null): Boolean = withContext(Dispatchers.IO) {
-        SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward)
+    suspend fun updateGlobalSettings(
+        upiId: String? = null,
+        waUrl: String? = null,
+        tgUrl: String? = null,
+        referralReward: Double? = null,
+        referralMinDeposit: Double? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit)
     }
 
     suspend fun fetchAdminStats(): AdminStats? = withContext(Dispatchers.IO) {
