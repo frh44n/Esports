@@ -490,28 +490,7 @@ fun HomeScreen(viewModel: MainViewModel) {
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Wallet Quick View
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkBg),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        Text(
-                            text = "Bal: ₹${"%.2f".format((user?.depositBalance ?: 0.0) + (user?.withdrawalBalance ?: 0.0))}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldGlow
-                        )
-                    }
-                }
-
+            Column(horizontalAlignment = Alignment.End) {
                 // Notifications Bell Icon
                 Box(contentAlignment = Alignment.TopEnd) {
                     IconButton(
@@ -540,6 +519,28 @@ fun HomeScreen(viewModel: MainViewModel) {
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Wallet Quick View
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkBg),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        Text(
+                            text = "Bal: ₹${"%.2f".format((user?.depositBalance ?: 0.0) + (user?.withdrawalBalance ?: 0.0))}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldGlow
+                        )
                     }
                 }
             }
@@ -790,6 +791,7 @@ fun EsportsSection(viewModel: MainViewModel) {
     val selectedGame by viewModel.selectedEsportsGame.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     var selectedTournamentForReg by remember { mutableStateOf<Tournament?>(null) }
+    var selectedTournamentForInfo by remember { mutableStateOf<Tournament?>(null) }
 
     // Check if the user is registered for ANY tournament
     val registeredTournaments = tournaments.filter { it.isJoined }
@@ -972,17 +974,18 @@ fun EsportsSection(viewModel: MainViewModel) {
                 items(filteredTournaments) { tournament ->
                     TournamentItemTile(
                         tournament = tournament,
-                        onRegisterClick = { selectedTournamentForReg = tournament }
+                        onRegisterClick = { selectedTournamentForReg = tournament },
+                        onInfoClick = { selectedTournamentForInfo = tournament }
                     )
                 }
             }
         }
     }
 
-    // Register details sheet controlled by admin
-    if (selectedTournamentForReg != null) {
-        val tour = selectedTournamentForReg!!
-        Dialog(onDismissRequest = { selectedTournamentForReg = null }) {
+    // Info/Details sheet controlled by Info button
+    if (selectedTournamentForInfo != null) {
+        val tour = selectedTournamentForInfo!!
+        Dialog(onDismissRequest = { selectedTournamentForInfo = null }) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardBg),
                 shape = RoundedCornerShape(16.dp),
@@ -998,7 +1001,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = "Registration Details",
+                        text = "Tournament Info",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -1012,7 +1015,18 @@ fun EsportsSection(viewModel: MainViewModel) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Small Font detailed breakdown
+                    Text(
+                        text = "GAME: ${tour.game.uppercase()}",
+                        fontSize = 12.sp,
+                        color = Color.LightGray,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "START TIME: ${tour.startTime}",
+                        fontSize = 12.sp,
+                        color = Color.LightGray,
+                        fontWeight = FontWeight.Medium
+                    )
                     Text(
                         text = "ENTRY FEE: ₹${tour.entryFee}",
                         fontSize = 12.sp,
@@ -1049,7 +1063,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                         color = Color.LightGray,
                         fontWeight = FontWeight.Medium
                     )
-                    
+
                     val parts = tour.rules.split("\n\n--- Extra Prizes ---\n")
                     if (parts.size > 1) {
                         parts[1].split("\n").forEach { line ->
@@ -1069,22 +1083,72 @@ fun EsportsSection(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "RULES & INSTRUCTIONS (By Admin)",
+                        text = "RULES & INSTRUCTIONS",
                         fontSize = 11.sp,
                         color = PurpleGlow,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = if (parts.size > 1) parts[0] else tour.rules,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         color = Color.Gray,
-                        lineHeight = 14.sp,
+                        lineHeight = 15.sp,
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = BorderColor)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = { selectedTournamentForInfo = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Close", color = DarkBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // Register details sheet showing ONLY registration fields
+    if (selectedTournamentForReg != null) {
+        val tour = selectedTournamentForReg!!
+        Dialog(onDismissRequest = { selectedTournamentForReg = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .border(1.dp, CyanGlow, RoundedCornerShape(16.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "Registration",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = tour.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CyanGlow
+                    )
+                    Text(
+                        text = "Entry Fee: ₹${tour.entryFee}",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     var teamName by remember { mutableStateOf("") }
                     var p1 by remember { mutableStateOf("") }
@@ -1098,7 +1162,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                     val matchType = matchTypeMatch?.groupValues?.get(1) ?: "Squad"
 
                     Text(
-                        text = "TEAM REGISTRATION",
+                        text = "TEAM REGISTRATION (${matchType.uppercase()})",
                         fontSize = 11.sp,
                         color = CyanGlow,
                         fontWeight = FontWeight.Bold
@@ -1246,7 +1310,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                         OutlinedButton(
                             onClick = { selectedTournamentForReg = null },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = Brush.verticalGradient(listOf(BorderColor, BorderColor))),
+                            border = BorderStroke(1.dp, BorderColor),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Cancel", fontSize = 14.sp)
@@ -1302,7 +1366,11 @@ fun EsportsSection(viewModel: MainViewModel) {
 
 // Tile is available in vertical, left side has poster, tournament name at top, and statistics on right
 @Composable
-fun TournamentItemTile(tournament: Tournament, onRegisterClick: () -> Unit) {
+fun TournamentItemTile(
+    tournament: Tournament,
+    onRegisterClick: () -> Unit,
+    onInfoClick: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = CardBg),
         shape = RoundedCornerShape(12.dp),
@@ -1338,45 +1406,70 @@ fun TournamentItemTile(tournament: Tournament, onRegisterClick: () -> Unit) {
                         .background(CardBg),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (tournament.posterRes.startsWith("http")) {
-                        coil.compose.AsyncImage(
-                            model = tournament.posterRes,
-                            contentDescription = "Tournament Poster",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = when (tournament.game) {
-                                            "BGMI" -> listOf(Color(0xFFFF5252), Color(0xFFFF7A00))
-                                            "FREEFIRE" -> listOf(Color(0xFFE040FB), Color(0xFF00E5FF))
-                                            else -> listOf(Color(0xFF00E676), Color(0xFF00B0FF))
-                                        }
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Default.Gamepad,
-                                    contentDescription = "Game Poster",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = tournament.game,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White
+                    val rawPoster = tournament.posterRes.trim()
+                    val posterUrlToLoad = when {
+                        rawPoster.startsWith("http://", ignoreCase = true) || rawPoster.startsWith("https://", ignoreCase = true) -> rawPoster
+                        rawPoster.equals("bgmi", ignoreCase = true) -> "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=300&q=80"
+                        rawPoster.equals("freefire", ignoreCase = true) -> "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=300&q=80"
+                        rawPoster.equals("pubg", ignoreCase = true) -> "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=300&q=80"
+                        else -> "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80"
+                    }
+
+                    coil.compose.SubcomposeAsyncImage(
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(posterUrlToLoad)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Tournament Poster",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        loading = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(CardBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    color = CyanGlow,
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
                                 )
                             }
+                        },
+                        error = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = when (tournament.game.uppercase()) {
+                                                "BGMI" -> listOf(Color(0xFFFF5252), Color(0xFFFF7A00))
+                                                "FREEFIRE" -> listOf(Color(0xFFE040FB), Color(0xFF00E5FF))
+                                                else -> listOf(Color(0xFF00E676), Color(0xFF00B0FF))
+                                            }
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.Gamepad,
+                                        contentDescription = "Game Poster",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = tournament.game,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -1392,40 +1485,71 @@ fun TournamentItemTile(tournament: Tournament, onRegisterClick: () -> Unit) {
                         Text(text = "₹${tournament.prizePool}", fontSize = 12.sp, color = EmeraldGlow, fontWeight = FontWeight.Bold)
                     }
 
-                    // Grid detail layout
-                    Text(
-                        text = "1st: ₹${tournament.prize1st} | 2nd: ₹${tournament.prize2nd} | 3rd: ₹${tournament.prize3rd}",
-                        fontSize = 10.sp,
-                        color = Color.LightGray,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
+                    // Start time and date instead of prize distribution list
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "Start Time",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = tournament.startTime,
+                            fontSize = 11.sp,
+                            color = Color.LightGray,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (tournament.isJoined) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = BorderColor),
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = "REGISTERED",
-                                color = EmeraldGlow,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    } else {
-                        Button(
-                            onClick = onRegisterClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Info Button
+                        OutlinedButton(
+                            onClick = onInfoClick,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanGlow),
+                            border = BorderStroke(1.dp, CyanGlow),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             modifier = Modifier
                                 .height(32.dp)
-                                .testTag("register_btn_${tournament.id}"),
+                                .testTag("info_btn_${tournament.id}"),
                             shape = RoundedCornerShape(6.dp)
                         ) {
-                            Text(text = "Register", color = DarkBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "Info", color = CyanGlow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (tournament.isJoined) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BorderColor),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "REGISTERED",
+                                    color = EmeraldGlow,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = onRegisterClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .testTag("register_btn_${tournament.id}"),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(text = "Register", color = DarkBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1536,6 +1660,8 @@ fun CasinoSection(viewModel: MainViewModel) {
 @Composable
 fun GameHistorySection(viewModel: MainViewModel) {
     val histories by viewModel.gameHistories.collectAsStateWithLifecycle()
+    val tournaments by viewModel.allTournaments.collectAsStateWithLifecycle()
+    var showPointTableUrl by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -1571,6 +1697,24 @@ fun GameHistorySection(viewModel: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(histories) { history ->
+                    // Parse tournament details and metadata
+                    val parts = history.gameName.split("|")
+                    val cleanGameName = parts.getOrNull(0) ?: history.gameName
+                    var tourId: Int? = null
+                    var position: String? = null
+
+                    for (i in 1 until parts.size) {
+                        val part = parts[i].trim()
+                        if (part.startsWith("tourId:")) {
+                            tourId = part.substringAfter("tourId:").toIntOrNull()
+                        } else if (part.startsWith("pos:")) {
+                            position = part.substringAfter("pos:")
+                        }
+                    }
+
+                    val associatedTour = tournaments.find { it.id == tourId }
+                    val pointsTableUrl = associatedTour?.rules?.substringAfter("\n\n--- Point Table ---\n", "")?.ifBlank { null }
+
                     Card(
                         colors = CardDefaults.cardColors(containerColor = CardBg),
                         shape = RoundedCornerShape(10.dp),
@@ -1578,43 +1722,142 @@ fun GameHistorySection(viewModel: MainViewModel) {
                             .fillMaxWidth()
                             .border(1.dp, BorderColor, RoundedCornerShape(10.dp))
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = history.gameName,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "Status: ${history.status}",
-                                    fontSize = 12.sp,
-                                    color = if (history.status == "PENDING") AmberGlow else EmeraldGlow
-                                )
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = cleanGameName,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Status: ${history.status}",
+                                        fontSize = 12.sp,
+                                        color = if (history.status == "PENDING") AmberGlow else EmeraldGlow
+                                    )
+                                    if (position != null) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "Position: $position",
+                                            fontSize = 12.sp,
+                                            color = CyanGlow,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+
+                                if (history.status == "PENDING") {
+                                    Text(
+                                        text = "Pending",
+                                        fontSize = 14.sp,
+                                        color = AmberGlow,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else {
+                                    Text(
+                                        text = "+ ₹${history.prizeWon ?: 0.0}",
+                                        fontSize = 15.sp,
+                                        color = EmeraldGlow,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
                             }
 
-                            if (history.status == "PENDING") {
-                                Text(
-                                    text = "Pending",
-                                    fontSize = 14.sp,
-                                    color = AmberGlow,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            } else {
-                                Text(
-                                    text = "+ ₹${history.prizeWon ?: 0.0}",
-                                    fontSize = 15.sp,
-                                    color = EmeraldGlow,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
+                            if (pointsTableUrl != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = { showPointTableUrl = pointsTableUrl },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = CyanGlow,
+                                        containerColor = CyanGlow.copy(alpha = 0.05f)
+                                    ),
+                                    border = BorderStroke(1.dp, CyanGlow),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.List,
+                                        contentDescription = "Point Table",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = CyanGlow
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("View Point Table", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showPointTableUrl != null) {
+        Dialog(onDismissRequest = { showPointTableUrl = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, BorderColor),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📊 Tournament Point Table",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    coil.compose.SubcomposeAsyncImage(
+                        model = showPointTableUrl,
+                        contentDescription = "Points Table",
+                        loading = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(250.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = CyanGlow)
+                            }
+                        },
+                        error = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(250.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Error,
+                                    contentDescription = "Error Loading Photo",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { showPointTableUrl = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Close", color = DarkBg, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1656,6 +1899,14 @@ fun MenuSection(viewModel: MainViewModel) {
                 onToggle = { expandedSection = if (expandedSection == "deposit") null else "deposit" }
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Text(
+                        text = "Current Deposit Balance: ₹${user?.depositBalance ?: 0.0}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldGlow,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2493,6 +2744,67 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                     var extraPrizesList by remember { mutableStateOf(listOf<Pair<String, String>>()) }
                     var matchType by remember { mutableStateOf("Squad") }
 
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val posterPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            val helper = uriToBase64(context, it)
+                            if (helper != null) {
+                                viewModel.showToast("Uploading poster image to Supabase...")
+                                viewModel.uploadPhoto(helper.first, "poster_${System.currentTimeMillis()}.jpg", helper.second) { url ->
+                                    if (url != null) {
+                                        posterUrl = url
+                                        viewModel.showToast("Poster uploaded successfully!")
+                                    }
+                                }
+                            } else {
+                                viewModel.showToast("Failed to process picked image.")
+                            }
+                        }
+                    }
+
+                    var uploadingPtTourId by remember { mutableStateOf<Int?>(null) }
+                    val pointTablePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+                        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        uri?.let {
+                            val helper = uriToBase64(context, it)
+                            val targetTourId = uploadingPtTourId
+                            if (helper != null && targetTourId != null) {
+                                val tour = tournaments.find { t -> t.id == targetTourId }
+                                if (tour != null) {
+                                    viewModel.showToast("Uploading points table image...")
+                                    viewModel.uploadPhoto(helper.first, "points_${targetTourId}_${System.currentTimeMillis()}.jpg", helper.second) { url ->
+                                        if (url != null) {
+                                            val baseRulesWithoutPt = tour.rules.substringBefore("\n\n--- Point Table ---\n")
+                                            val newRules = baseRulesWithoutPt + "\n\n--- Point Table ---\n" + url
+                                            viewModel.adminUpdateTournamentDetails(
+                                                id = tour.id,
+                                                game = tour.game,
+                                                title = tour.title,
+                                                posterRes = tour.posterRes,
+                                                entryFee = tour.entryFee,
+                                                prizePool = tour.prizePool,
+                                                prize1st = tour.prize1st,
+                                                prize2nd = tour.prize2nd,
+                                                prize3rd = tour.prize3rd,
+                                                prize4th = tour.prize4th,
+                                                rules = newRules,
+                                                startTime = tour.startTime
+                                            )
+                                            viewModel.showToast("Points table uploaded successfully!")
+                                        }
+                                    }
+                                }
+                            } else {
+                                viewModel.showToast("Failed to process picked image.")
+                            }
+                            uploadingPtTourId = null
+                        }
+                    }
+
+
                     Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -2593,6 +2905,18 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+
+                                Button(
+                                    onClick = { posterPicker.launch("image/*") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyanGlow.copy(alpha = 0.15f), contentColor = CyanGlow),
+                                    border = BorderStroke(1.dp, CyanGlow),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Image, contentDescription = "Upload Poster", modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Upload Poster from Device", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
 
                                 OutlinedTextField(
                                     value = entryFee,
@@ -2827,7 +3151,10 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                                 matchType = "Squad"
                                                             }
 
-                                                            val parts = parsedRules.split("\n\n--- Extra Prizes ---\n")
+                                                            // Strip point table link if editing
+                                                            val baseRulesWithoutPt = parsedRules.substringBefore("\n\n--- Point Table ---\n")
+
+                                                            val parts = baseRulesWithoutPt.split("\n\n--- Extra Prizes ---\n")
                                                             if (parts.size > 1) {
                                                                 rules = parts[0]
                                                                 extraPrizesList = parts[1].split("\n").map { line ->
@@ -2835,7 +3162,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                                     if (p.size == 2) p[0] to p[1] else "" to ""
                                                                 }.filter { it.first.isNotBlank() }
                                                             } else {
-                                                                rules = parsedRules
+                                                                rules = baseRulesWithoutPt
                                                                 extraPrizesList = emptyList()
                                                             }
                                                         },
@@ -2844,6 +3171,18 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                         modifier = Modifier.weight(1f)
                                                     ) {
                                                         Text("Edit", fontSize = 11.sp)
+                                                    }
+
+                                                    Button(
+                                                        onClick = {
+                                                            uploadingPtTourId = tour.id
+                                                            pointTablePicker.launch("image/*")
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow.copy(alpha = 0.15f), contentColor = CyanGlow),
+                                                        border = BorderStroke(1.dp, CyanGlow),
+                                                        modifier = Modifier.weight(1.2f)
+                                                    ) {
+                                                        Text("PT Upload", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                     }
 
                                                     Button(
@@ -2858,6 +3197,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                         }
                                     }
                                 }
+
                             }
                         }
                     }
@@ -3464,3 +3804,21 @@ fun RecordCard(title: String, value: String, modifier: Modifier = Modifier, colo
         }
     }
 }
+
+fun uriToBase64(context: android.content.Context, uri: android.net.Uri): Pair<String, String>? {
+    return try {
+        val contentResolver = context.contentResolver
+        val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
+        val inputStream = contentResolver.openInputStream(uri)
+        val bytes = inputStream?.readBytes()
+        inputStream?.close()
+        if (bytes != null) {
+            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            base64 to mimeType
+        } else null
+    } catch (e: java.lang.Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+

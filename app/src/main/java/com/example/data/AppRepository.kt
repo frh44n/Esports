@@ -275,6 +275,10 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.updateTournamentAdmin(id, game, title, posterRes, entryFee, prizePool, prize1st, prize2nd, prize3rd, prize4th, rules, startTime)
     }
 
+    suspend fun uploadPhoto(base64Image: String, filename: String, mimeType: String): Result<String> = withContext(Dispatchers.IO) {
+        SupabaseClient.uploadPhoto(base64Image, filename, mimeType)
+    }
+
     private fun prePopulateTournamentsOnline() {
         SupabaseClient.insertTournament(
             Tournament(

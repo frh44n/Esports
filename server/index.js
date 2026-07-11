@@ -8,7 +8,72 @@ const PORT = process.env.PORT || 10000;
 
 // Enable CORS and JSON parsing
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Helper: Ensure Supabase Storage Bucket Exists
+async function ensureBucketExists() {
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    if (listError) throw listError;
+    const exists = buckets.some(b => b.name === 'esports_images');
+    if (!exists) {
+      const { data, error } = await supabase.storage.createBucket('esports_images', {
+        public: true,
+        fileSizeLimit: 5242880, // 5MB
+        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp']
+      });
+      if (error) {
+        console.error("Error creating bucket esports_images:", error);
+      } else {
+        console.log("Bucket 'esports_images' created successfully.");
+      }
+    }
+  } catch (err) {
+    console.error("ensureBucketExists error:", err);
+  }
+}
+
+// Upload Endpoint
+app.post('/api/upload', async (req, res) => {
+  try {
+    const { image, filename, mimeType } = req.body;
+    if (!image) {
+      return res.status(400).json({ error: "No image data provided" });
+    }
+    
+    // Check if image is already a full URL
+    if (image.startsWith('http://') || image.startsWith('https://')) {
+      return res.json({ success: true, url: image });
+    }
+
+    await ensureBucketExists();
+
+    const cleanFilename = `${Date.now()}_${(filename || 'image.jpg').replace(/[^a-zA-Z0-9._-]/g, '')}`;
+    const buffer = Buffer.from(image, 'base64');
+
+    const { data, error } = await supabase.storage
+      .from('esports_images')
+      .upload(cleanFilename, buffer, {
+        contentType: mimeType || 'image/jpeg',
+        upsert: true
+      });
+
+    if (error) {
+      console.error("Supabase Storage upload failed:", error);
+      throw error;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('esports_images')
+      .getPublicUrl(cleanFilename);
+
+    res.json({ success: true, url: publicUrlData.publicUrl });
+  } catch (err) {
+    console.error("Upload handler error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 // Initialize Supabase Client
@@ -1174,6 +1239,16 @@ app.post('/api/admin/registrations/:id/reward', async (req, res) => {
       return res.status(400).json({ error: "raw_whatsapp and prize_amount are required" });
     }
 
+    // 0. Fetch registration to get tournament_id
+    const { data: reg } = await supabase
+      .from('registrations')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    const tId = reg ? reg.tournament_id : '';
+    const finalGameName = `${tournament_title || 'Tournament'}|tourId:${tId}|pos:${position || 'Completed'}`;
+
     // 1. Fetch user profile
     const { data: user, error: userError } = await supabase
       .from('profiles')
@@ -1228,6 +1303,7 @@ app.post('/api/admin/registrations/:id/reward', async (req, res) => {
         .from('game_histories')
         .update({
           status: 'COMPLETED',
+          game_name: finalGameName,
           prize_won: prize > 0 ? prize : null
         })
         .eq('id', history.id);
@@ -1237,13 +1313,14 @@ app.post('/api/admin/registrations/:id/reward', async (req, res) => {
         .insert([
           {
             whatsapp_number: raw_whatsapp,
-            game_name: tournament_title || 'Tournament',
+            game_name: finalGameName,
             prize_won: prize > 0 ? prize : null,
             status: 'COMPLETED',
             timestamp: Date.now()
           }
         ]);
     }
+
 
     res.json({ success: true, message: `Position ${position} declared and reward of ${prize} awarded to ${raw_whatsapp}` });
   } catch (error) {

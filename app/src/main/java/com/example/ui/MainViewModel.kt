@@ -645,6 +645,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun uploadPhoto(base64Image: String, filename: String, mimeType: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val result = repository.uploadPhoto(base64Image, filename, mimeType)
+            _isRefreshing.value = false
+            result.onSuccess { url ->
+                onResult(url)
+            }.onFailure { err ->
+                _toastMessage.value = "Upload failed: ${err.message}"
+                onResult(null)
+            }
+        }
+    }
+
+
     // --- NOTIFICATION SYSTEM STATE & LOGIC ---
     private val _inAppNotifications = MutableStateFlow<List<InAppNotification>>(emptyList())
     val inAppNotifications: StateFlow<List<InAppNotification>> = _inAppNotifications.asStateFlow()

@@ -827,6 +827,38 @@ object SupabaseClient {
         }
     }
 
+    fun uploadPhoto(base64Image: String, filename: String, mimeType: String): Result<String> {
+        val url = "${getServerUrl()}/api/upload"
+        val bodyJson = JSONObject().apply {
+            put("image", base64Image)
+            put("filename", filename)
+            put("mimeType", mimeType)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                Log.d(TAG, "uploadPhoto response code: ${response.code}")
+                if (response.isSuccessful) {
+                    val jsonObj = JSONObject(bodyStr)
+                    val imageUrl = jsonObj.getString("url")
+                    Result.success(imageUrl)
+                } else {
+                    val errMsg = parseError(bodyStr) ?: "Upload failed (Code: ${response.code})"
+                    Result.failure(Exception(errMsg))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "uploadPhoto error", e)
+            Result.failure(e)
+        }
+    }
+
     private fun parseError(bodyStr: String): String? {
         return try {
             val obj = JSONObject(bodyStr)
