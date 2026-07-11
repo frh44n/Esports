@@ -77,14 +77,7 @@ class AppRepository(private val appDao: AppDao) {
      * Fetch all Tournaments from Supabase
      */
     suspend fun getTournaments(): List<Tournament> = withContext(Dispatchers.IO) {
-        val tournaments = SupabaseClient.fetchTournaments()
-        if (tournaments.isEmpty() && SupabaseClient.isConfigured()) {
-            // Pre-populate if empty and Supabase is online
-            prePopulateTournamentsOnline()
-            SupabaseClient.fetchTournaments()
-        } else {
-            tournaments
-        }
+        SupabaseClient.fetchTournaments()
     }
 
     /**

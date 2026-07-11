@@ -81,6 +81,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoadingReferred = MutableStateFlow(false)
     val isLoadingReferred: StateFlow<Boolean> = _isLoadingReferred.asStateFlow()
 
+    private val _operatingTxIds = MutableStateFlow<Set<Int>>(emptySet())
+    val operatingTxIds: StateFlow<Set<Int>> = _operatingTxIds.asStateFlow()
+
     private var currentReferredPage = 1
     private var isLastReferredPage = false
 
@@ -406,20 +409,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Admin commands
     fun adminApproveDeposit(txId: Int, txAmount: Double, txUser: String) {
         viewModelScope.launch {
-            val ok = repository.approveDeposit(txId, txAmount, txUser)
-            if (ok) {
-                _toastMessage.value = "Deposit approved! Balance updated."
-                refreshOnlineData()
+            _operatingTxIds.value = _operatingTxIds.value + txId
+            try {
+                val ok = repository.approveDeposit(txId, txAmount, txUser)
+                if (ok) {
+                    _toastMessage.value = "Deposit approved! Balance updated."
+                    refreshOnlineData()
+                }
+            } finally {
+                _operatingTxIds.value = _operatingTxIds.value - txId
             }
         }
     }
 
     fun adminRejectDeposit(txId: Int) {
         viewModelScope.launch {
-            val ok = repository.rejectDeposit(txId)
-            if (ok) {
-                _toastMessage.value = "Deposit request rejected."
-                refreshOnlineData()
+            _operatingTxIds.value = _operatingTxIds.value + txId
+            try {
+                val ok = repository.rejectDeposit(txId)
+                if (ok) {
+                    _toastMessage.value = "Deposit request rejected."
+                    refreshOnlineData()
+                }
+            } finally {
+                _operatingTxIds.value = _operatingTxIds.value - txId
             }
         }
     }
@@ -444,20 +457,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun adminApproveWithdrawal(txId: Int) {
         viewModelScope.launch {
-            val ok = repository.approveWithdrawal(txId)
-            if (ok) {
-                _toastMessage.value = "Withdrawal approved!"
-                refreshOnlineData()
+            _operatingTxIds.value = _operatingTxIds.value + txId
+            try {
+                val ok = repository.approveWithdrawal(txId)
+                if (ok) {
+                    _toastMessage.value = "Withdrawal approved!"
+                    refreshOnlineData()
+                }
+            } finally {
+                _operatingTxIds.value = _operatingTxIds.value - txId
             }
         }
     }
 
     fun adminRejectWithdrawal(txId: Int, txAmount: Double, txUser: String) {
         viewModelScope.launch {
-            val ok = repository.rejectWithdrawal(txId, txAmount, txUser)
-            if (ok) {
-                _toastMessage.value = "Withdrawal request rejected. Balance refunded."
-                refreshOnlineData()
+            _operatingTxIds.value = _operatingTxIds.value + txId
+            try {
+                val ok = repository.rejectWithdrawal(txId, txAmount, txUser)
+                if (ok) {
+                    _toastMessage.value = "Withdrawal request rejected. Balance refunded."
+                    refreshOnlineData()
+                }
+            } finally {
+                _operatingTxIds.value = _operatingTxIds.value - txId
             }
         }
     }

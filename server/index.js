@@ -435,7 +435,7 @@ app.delete('/api/tournaments/:id', async (req, res) => {
       .eq('id', id);
 
     if (error) throw error;
-    res.json({ success: true, message: `Tournament ${id} deleted successfully` });
+    res.json({ success: true, message: `Tournament ${id} deleted successfully.` });
   } catch (error) {
     console.error("Error deleting tournament:", error);
     res.status(500).json({ error: error.message });
@@ -554,6 +554,21 @@ app.post('/api/tournaments/register', async (req, res) => {
         .eq('id', user.id);
       throw regError;
     }
+
+    // Log the tournament entry in transaction history
+    await supabase
+      .from('transactions')
+      .insert([
+        {
+          whatsapp_number: raw_whatsapp,
+          type: 'TOURNAMENT_ENTRY',
+          amount: entryFee,
+          upi_id: 'SYSTEM',
+          reference_number: `${tournament.title || 'Tournament'} (Reg: ${registration.id})`,
+          status: 'APPROVED',
+          timestamp: Date.now()
+        }
+      ]);
 
     // 5. Insert to Game History (as pending, using raw_whatsapp)
     await supabase

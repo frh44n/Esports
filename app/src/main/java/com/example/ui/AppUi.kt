@@ -2433,6 +2433,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
     val currentRegistrations by viewModel.currentTournamentRegistrations.collectAsStateWithLifecycle()
     val dynamicUpiId by viewModel.dynamicUpiId.collectAsStateWithLifecycle()
     val globalSettings by viewModel.globalSettings.collectAsStateWithLifecycle()
+    val operatingTxIds by viewModel.operatingTxIds.collectAsStateWithLifecycle()
 
     LaunchedEffect(adminSection) {
         viewModel.refreshOnlineData(silent = true)
@@ -2527,19 +2528,30 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                     .padding(top = 12.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
+                                                val isTxLoading = operatingTxIds.contains(tx.id)
                                                 Button(
                                                     onClick = { viewModel.adminRejectDeposit(tx.id) },
                                                     colors = ButtonDefaults.buttonColors(containerColor = RedGlow),
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = !isTxLoading
                                                 ) {
                                                     Text("Reject")
                                                 }
                                                 Button(
                                                     onClick = { viewModel.adminApproveDeposit(tx.id, tx.amount, tx.whatsappNumber) },
                                                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = !isTxLoading
                                                 ) {
-                                                    Text("Approve", color = DarkBg, fontWeight = FontWeight.Bold)
+                                                    if (isTxLoading) {
+                                                        androidx.compose.material3.CircularProgressIndicator(
+                                                            modifier = Modifier.size(18.dp),
+                                                            color = DarkBg,
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                    } else {
+                                                        Text("Approve", color = DarkBg, fontWeight = FontWeight.Bold)
+                                                    }
                                                 }
                                             }
                                         }
@@ -2576,19 +2588,30 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                     .padding(top = 12.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
+                                                val isTxLoading = operatingTxIds.contains(tx.id)
                                                 Button(
                                                     onClick = { viewModel.adminRejectWithdrawal(tx.id, tx.amount, tx.whatsappNumber) },
                                                     colors = ButtonDefaults.buttonColors(containerColor = RedGlow),
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = !isTxLoading
                                                 ) {
                                                     Text("Reject")
                                                 }
                                                 Button(
                                                     onClick = { viewModel.adminApproveWithdrawal(tx.id) },
                                                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    enabled = !isTxLoading
                                                 ) {
-                                                    Text("Approve", color = DarkBg, fontWeight = FontWeight.Bold)
+                                                    if (isTxLoading) {
+                                                        androidx.compose.material3.CircularProgressIndicator(
+                                                            modifier = Modifier.size(18.dp),
+                                                            color = DarkBg,
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                     } else {
+                                                         Text("Approve", color = DarkBg, fontWeight = FontWeight.Bold)
+                                                     }
                                                 }
                                             }
                                         }
@@ -3903,14 +3926,32 @@ fun HistoryScreen(viewModel: MainViewModel) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
+                                val displayType = when (tx.type) {
+                                    "DEPOSIT" -> "Deposit Money"
+                                    "WITHDRAWAL" -> "Withdrawal Request"
+                                    "REFERRAL_REWARD" -> "Referral Reward Earned"
+                                    "TOURNAMENT_ENTRY" -> "Tournament Entry Fee"
+                                    "PRIZE_WON" -> "Prize Won"
+                                    "BALANCE_ADJUST" -> "Balance Adjustment"
+                                    "DEVICE_REGISTRATION" -> "Device Registration"
+                                    else -> tx.type
+                                }
+                                val displayRef = if (tx.type == "REFERRAL_REWARD" && tx.referenceNumber?.startsWith("REF-") == true) {
+                                    val wa = tx.referenceNumber.substring(4)
+                                    val last4 = if (wa.length >= 4) wa.substring(wa.length - 4) else wa
+                                    val masked = "*".repeat(maxOf(0, wa.length - 4)) + last4
+                                    "Referred Friend: $masked"
+                                } else {
+                                    "Ref: ${tx.referenceNumber ?: "N/A"}"
+                                }
                                 Text(
-                                    text = tx.type,
+                                    text = displayType,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "Ref: ${tx.referenceNumber ?: "N/A"}",
+                                    text = displayRef,
                                     fontSize = 11.sp,
                                     color = Color.Gray
                                 )
