@@ -1966,12 +1966,61 @@ app.post('/api/mines/reveal', async (req, res) => {
     }
     
     const settings = getGlobalSettings();
-    const rtp = settings.mines_house_edge || 97.0;
+    const rtp = settings.mines_house_edge !== undefined ? parseFloat(settings.mines_house_edge) : 97.0;
     
+    // Determine dynamically based on RTP/ROI set by admin
+    const currentRevealedCount = session.revealed.length;
+    const totalMines = session.mines_count;
+    const remainingUnrevealed = 25 - currentRevealedCount;
+    const remainingSafe = remainingUnrevealed - totalMines;
+
+    // Standard fair probability of a safe tile
+    const fairSafeProb = remainingUnrevealed > 0 ? (remainingSafe / remainingUnrevealed) : 0.0;
+    // Adjusted probability of a safe tile based on RTP (0 to 100)
+    const adjustedSafeProb = fairSafeProb * (rtp / 100.0);
+
+    const randVal = Math.random();
+    let hitMine = false;
+
+    if (randVal >= adjustedSafeProb) {
+      hitMine = true;
+    }
+
     // Check if hit mine
-    if (session.board[tileIdx] === true) {
+    if (hitMine === true) {
       // LOST
       session.status = 'LOST';
+      
+      // Set the current clicked tile as a mine
+      session.board = Array(25).fill(false);
+      session.board[tileIdx] = true;
+      
+      // Place the remaining (totalMines - 1) mines on other tiles
+      // They cannot be placed on tileIdx, and they cannot be placed on any already revealed tiles.
+      const forbiddenIndices = new Set(session.revealed);
+      forbiddenIndices.add(tileIdx);
+      
+      const availableIndices = [];
+      for (let i = 0; i < 25; i++) {
+        if (!forbiddenIndices.has(i)) {
+          availableIndices.push(i);
+        }
+      }
+      
+      // Shuffle availableIndices
+      for (let i = availableIndices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = availableIndices[i];
+        availableIndices[i] = availableIndices[j];
+        availableIndices[j] = temp;
+      }
+      
+      // Place remaining mines
+      const minesToPlace = Math.min(totalMines - 1, availableIndices.length);
+      for (let i = 0; i < minesToPlace; i++) {
+        session.board[availableIndices[i]] = true;
+      }
+
       saveMinesSessions(sessions);
       
       // Log game history
@@ -2006,6 +2055,31 @@ app.post('/api/mines/reveal', async (req, res) => {
     // If all safe spots are revealed, auto cashout!
     if (newRevealedCount === safeCount) {
       session.status = 'WON';
+      
+      // Ensure board is fully populated with exactly totalMines mines (none on the revealed safe spots)
+      session.board = Array(25).fill(false);
+      
+      const forbiddenIndices = new Set(session.revealed);
+      const availableIndices = [];
+      for (let i = 0; i < 25; i++) {
+        if (!forbiddenIndices.has(i)) {
+          availableIndices.push(i);
+        }
+      }
+      
+      // Shuffle availableIndices
+      for (let i = availableIndices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = availableIndices[i];
+        availableIndices[i] = availableIndices[j];
+        availableIndices[j] = temp;
+      }
+      
+      const minesToPlace = Math.min(totalMines, availableIndices.length);
+      for (let i = 0; i < minesToPlace; i++) {
+        session.board[availableIndices[i]] = true;
+      }
+
       saveMinesSessions(sessions);
       
       const finalPayout = Math.round(session.bet_amount * multiplier * 100) / 100;
@@ -2102,6 +2176,32 @@ app.post('/api/mines/cashout', async (req, res) => {
     }
     
     session.status = 'WON';
+    
+    // Ensure board is fully populated with exactly totalMines mines (none on the revealed safe spots)
+    const totalMines = session.mines_count;
+    session.board = Array(25).fill(false);
+    
+    const forbiddenIndices = new Set(session.revealed);
+    const availableIndices = [];
+    for (let i = 0; i < 25; i++) {
+      if (!forbiddenIndices.has(i)) {
+        availableIndices.push(i);
+      }
+    }
+    
+    // Shuffle availableIndices
+    for (let i = availableIndices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const temp = availableIndices[i];
+      availableIndices[i] = availableIndices[j];
+      availableIndices[j] = temp;
+    }
+    
+    const minesToPlace = Math.min(totalMines, availableIndices.length);
+    for (let i = 0; i < minesToPlace; i++) {
+      session.board[availableIndices[i]] = true;
+    }
+
     saveMinesSessions(sessions);
     
     const finalPayout = Math.round(session.bet_amount * session.multiplier * 100) / 100;
