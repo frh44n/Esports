@@ -3728,6 +3728,8 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                         val teamName = parts.getOrNull(1) ?: "Solo"
                                         val members = parts.getOrNull(2) ?: "Solo Player"
                                         val slotNum = parts.getOrNull(3) ?: "Unassigned"
+                                        val declaredPos = parts.getOrNull(4)
+                                        val declaredPrize = parts.getOrNull(5)
 
                                         Card(
                                             colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -3741,12 +3743,26 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Text(teamName, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .background(PurpleGlow, RoundedCornerShape(4.dp))
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                     ) {
-                                                        Text(slotNum, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        if (!declaredPos.isNullOrBlank()) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .background(EmeraldGlow, RoundedCornerShape(4.dp))
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text("$declaredPos - ₹$declaredPrize", color = DarkBg, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .background(PurpleGlow, RoundedCornerShape(4.dp))
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text(slotNum, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        }
                                                     }
                                                 }
 
@@ -3758,8 +3774,8 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                 Spacer(modifier = Modifier.height(8.dp))
 
                                                 // Award controls
-                                                var declarePositionText by remember { mutableStateOf("1st") }
-                                                var declarePrizeText by remember { mutableStateOf("") }
+                                                var declarePositionText by remember(declaredPos) { mutableStateOf(declaredPos ?: "1st") }
+                                                var declarePrizeText by remember(declaredPrize) { mutableStateOf(declaredPrize ?: "") }
 
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),

@@ -493,13 +493,6 @@ app.post('/api/tournaments/:id/finish', async (req, res) => {
 
     if (error) throw error;
 
-    const { error: deleteRegsErr } = await supabase
-      .from('registrations')
-      .delete()
-      .eq('tournament_id', id);
-
-    if (deleteRegsErr) throw deleteRegsErr;
-
     res.json({ success: true, tournament: data });
   } catch (error) {
     console.error("Error finishing tournament:", error);
@@ -1507,6 +1500,21 @@ app.post('/api/admin/registrations/:id/reward', async (req, res) => {
             timestamp: Date.now()
           }
         ]);
+    }
+
+    // Update registration with position and prize inside whatsapp_number column
+    if (reg) {
+      const parts = reg.whatsapp_number.split("|");
+      const baseNum = parts[0] || "";
+      const teamName = parts[1] || "";
+      const members = parts[2] || "";
+      const slotNum = parts[3] || "";
+      const updatedWhatsappNum = `${baseNum}|${teamName}|${members}|${slotNum}|${position || "Completed"}|${prize_amount || "0"}`;
+
+      await supabase
+        .from('registrations')
+        .update({ whatsapp_number: updatedWhatsappNum })
+        .eq('id', id);
     }
 
 
