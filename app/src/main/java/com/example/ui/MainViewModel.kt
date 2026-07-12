@@ -437,9 +437,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?, referralMinDeposit: Double?) {
+    fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?, referralMinDeposit: Double?, minesHouseEdge: Double?) {
         viewModelScope.launch {
-            val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit)
+            val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit, minesHouseEdge)
             if (ok) {
                 _toastMessage.value = "Settings updated!"
                 refreshOnlineData()
@@ -934,6 +934,117 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: SecurityException) {
             e.printStackTrace()
         }
+    }
+
+    // ==========================================
+    // MINES GAME STATE & ACTIONS
+    // ==========================================
+    private val _minesActiveGame = MutableStateFlow<com.example.data.MinesGame?>(null)
+    val minesActiveGame: StateFlow<com.example.data.MinesGame?> = _minesActiveGame.asStateFlow()
+
+    private val _minesLoading = MutableStateFlow(false)
+    val minesLoading: StateFlow<Boolean> = _minesLoading.asStateFlow()
+
+    private val _hasCheckedActiveMines = MutableStateFlow(false)
+    val hasCheckedActiveMines: StateFlow<Boolean> = _hasCheckedActiveMines.asStateFlow()
+
+    fun checkActiveMinesGame() {
+        val user = loggedInUser.value ?: return
+        if (_hasCheckedActiveMines.value) return
+        viewModelScope.launch {
+            _minesLoading.value = true
+            val response = repository.checkActiveMines(user.whatsappNumber)
+            if (response.success && response.active) {
+                _minesActiveGame.value = response.game
+            } else {
+                _minesActiveGame.value = null
+            }
+            _hasCheckedActiveMines.value = true
+            _minesLoading.value = false
+        }
+    }
+
+    fun startMinesGame(betAmount: Double, minesCount: Int) {
+        val user = loggedInUser.value ?: return
+        viewModelScope.launch {
+            _minesLoading.value = true
+            val response = repository.startMines(user.whatsappNumber, betAmount, minesCount)
+            if (response.success) {
+                _minesActiveGame.value = response.game
+                _toastMessage.value = "Game started! Tap a tile."
+                refreshOnlineData(silent = true)
+            } else {
+                _toastMessage.value = response.error ?: "Failed to start game"
+            }
+            _minesLoading.value = false
+        }
+    }
+
+    fun revealMinesTile(tileIndex: Int, onGemRevealed: () -> Unit, onMineHit: () -> Unit, onAutoCashout: (Double) -> Unit) {
+        val game = _minesActiveGame.value ?: return
+        viewModelScope.launch {
+            _minesLoading.value = true
+            val response = repository.revealMines(game.id, tileIndex)
+            if (response.success) {
+                if (response.status == "LOST") {
+                    _minesActiveGame.value = game.copy(
+                        revealed = game.revealed + tileIndex,
+                        status = "LOST",
+                        board = response.board
+                    )
+                    _toastMessage.value = "Oops! You hit a mine!"
+                    onMineHit()
+                    refreshOnlineData(silent = true)
+                } else if (response.status == "WON") {
+                    _minesActiveGame.value = game.copy(
+                        revealed = response.revealed ?: (game.revealed + tileIndex),
+                        multiplier = response.multiplier ?: game.multiplier,
+                        status = "WON",
+                        board = response.board
+                    )
+                    val payout = response.prizeWon ?: 0.0
+                    _toastMessage.value = "Perfect! Autocashout: ₹$payout"
+                    onAutoCashout(payout)
+                    refreshOnlineData(silent = true)
+                } else {
+                    _minesActiveGame.value = game.copy(
+                        revealed = response.revealed ?: (game.revealed + tileIndex),
+                        multiplier = response.multiplier ?: game.multiplier,
+                        nextMultiplier = response.nextMultiplier ?: game.nextMultiplier
+                    )
+                    onGemRevealed()
+                }
+            } else {
+                _toastMessage.value = response.error ?: "Failed to reveal cell"
+            }
+            _minesLoading.value = false
+        }
+    }
+
+    fun cashoutMinesGame(onCashoutSuccess: (Double) -> Unit) {
+        val game = _minesActiveGame.value ?: return
+        viewModelScope.launch {
+            _minesLoading.value = true
+            val response = repository.cashoutMines(game.id)
+            if (response.success) {
+                _minesActiveGame.value = game.copy(
+                    status = "WON",
+                    multiplier = response.multiplier,
+                    board = response.board
+                )
+                _toastMessage.value = "Cashed out! You won ₹${response.prizeWon}"
+                onCashoutSuccess(response.prizeWon)
+                refreshOnlineData(silent = true)
+            } else {
+                _toastMessage.value = response.error ?: "Cashout failed"
+            }
+            _minesLoading.value = false
+        }
+    }
+
+    fun resetMinesSessionState() {
+        _minesActiveGame.value = null
+        _hasCheckedActiveMines.value = false
     }
 }
 

@@ -1587,13 +1587,27 @@ fun TournamentItemTile(
 
 @Composable
 fun CasinoSection(viewModel: MainViewModel) {
-    val casinoGames = listOf(
-        Pair("Ludo", Icons.Default.TableChart),
-        Pair("Mines", Icons.Default.Whatshot),
-        Pair("Chess", Icons.Default.GridOn),
-        Pair("Jili", Icons.Default.Stars),
-        Pair("Carrom", Icons.Default.Circle)
-    )
+    var showMinesGame by remember { mutableStateOf(false) }
+
+    if (showMinesGame) {
+        MinesGameScreen(viewModel = viewModel, onBack = { showMinesGame = false })
+        return
+    }
+
+    val tournaments by viewModel.allTournaments.collectAsStateWithLifecycle()
+    var selectedCasinoTour by remember { mutableStateOf<Tournament?>(null) }
+
+    // Filter tournaments created specifically as "Casino" game type (case-insensitive)
+    val dbCasinoGames = remember(tournaments) {
+        tournaments.filter {
+            it.game.equals("Casino", ignoreCase = true) ||
+            it.game.lowercase().contains("casino")
+        }.sortedByDescending { it.id }
+    }
+
+    // Prepare exactly 2 games to display
+    val game1 = dbCasinoGames.getOrNull(0)
+    val game2 = dbCasinoGames.getOrNull(1)
 
     Column(
         modifier = Modifier
@@ -1614,71 +1628,272 @@ fun CasinoSection(viewModel: MainViewModel) {
         )
 
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(casinoGames) { game ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CardBg),
-                    shape = RoundedCornerShape(12.dp),
+            // Render Game 1
+            item {
+                CasinoGameCard(
+                    gameName = game1?.title ?: "Ludo Classic",
+                    posterUrl = game1?.posterRes?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80",
+                    subtext = if (game1 != null) "Prize Pool: ₹${game1.prizePool} • Entry: ₹${game1.entryFee}" else "Instant multiplayer board game with massive payouts!",
+                    isPlayable = game1 != null,
+                    onClick = {
+                        if (game1 != null) {
+                            selectedCasinoTour = game1
+                        } else {
+                            viewModel.showToast("Upcoming: Ludo Classic game will be live shortly!")
+                        }
+                    }
+                )
+            }
+
+            // Render Game 2
+            item {
+                CasinoGameCard(
+                    gameName = game2?.title ?: "Mines Sweeper",
+                    posterUrl = game2?.posterRes?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+                    subtext = if (game2 != null) "Prize Pool: ₹${game2.prizePool} • Entry: ₹${game2.entryFee}" else "Predict safe spots, avoid explosives, multiply your stakes!",
+                    isPlayable = true, // Force playable as we have integrated the live game!
+                    onClick = {
+                        showMinesGame = true
+                    }
+                )
+            }
+        }
+    }
+
+    // Self-contained registration modal inside CasinoSection
+    if (selectedCasinoTour != null) {
+        val tour = selectedCasinoTour!!
+        Dialog(onDismissRequest = { selectedCasinoTour = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .border(1.dp, CyanGlow, RoundedCornerShape(16.dp))
+            ) {
+                Column(
                     modifier = Modifier
+                        .padding(20.dp)
                         .fillMaxWidth()
-                        .clickable { viewModel.showToast("Upcoming: ${game.first} game will be live shortly!") }
-                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                        .verticalScroll(rememberScrollState())
                 ) {
+                    Text(
+                        text = "Casino Registration",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = tour.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = CyanGlow
+                    )
+                    Text(
+                        text = "Entry Fee: ₹${tour.entryFee} • Prize Pool: ₹${tour.prizePool}",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var teamName by remember { mutableStateOf("") }
+                    var p1 by remember { mutableStateOf("") }
+                    var p2 by remember { mutableStateOf("") }
+                    var p3 by remember { mutableStateOf("") }
+                    var p4 by remember { mutableStateOf("") }
+
+                    val matchTypeMatch = "Match Type: (Solo|Duo|Squad)".toRegex().find(tour.rules)
+                    val matchType = matchTypeMatch?.groupValues?.get(1) ?: "Solo"
+
+                    Text(
+                        text = "REGISTRATION DETAILS (${matchType.uppercase()})",
+                        fontSize = 11.sp,
+                        color = CyanGlow,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (matchType != "Solo") {
+                        OutlinedTextField(
+                            value = teamName,
+                            onValueChange = { teamName = it },
+                            label = { Text("Team Name", color = Color.Gray) },
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = p1,
+                        onValueChange = { p1 = it },
+                        label = { Text("Player 1 Name (Leader)", color = Color.Gray) },
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+
+                    if (matchType == "Duo" || matchType == "Squad") {
+                        OutlinedTextField(
+                            value = p2,
+                            onValueChange = { p2 = it },
+                            label = { Text("Player 2 Name", color = Color.Gray) },
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                    }
+
+                    if (matchType == "Squad") {
+                        OutlinedTextField(
+                            value = p3,
+                            onValueChange = { p3 = it },
+                            label = { Text("Player 3 Name", color = Color.Gray) },
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                        OutlinedTextField(
+                            value = p4,
+                            onValueChange = { p4 = it },
+                            label = { Text("Player 4 Name", color = Color.Gray) },
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = CyanGlow, unfocusedBorderColor = BorderColor),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Poster in small size
-                        Box(
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Brush.radialGradient(listOf(PurpleGlow.copy(alpha = 0.5f), DarkBg))),
-                            contentAlignment = Alignment.Center
+                        OutlinedButton(
+                            onClick = { selectedCasinoTour = null },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                            border = BorderStroke(1.dp, BorderColor),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(
-                                imageVector = game.second,
-                                contentDescription = game.first,
-                                tint = PurpleGlow,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Text("Cancel", fontSize = 14.sp)
                         }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Button(
+                            onClick = {
+                                val isInvalid = when (matchType) {
+                                    "Solo" -> p1.isBlank()
+                                    "Duo" -> p1.isBlank() || p2.isBlank()
+                                    else -> p1.isBlank() || p2.isBlank() || p3.isBlank() || p4.isBlank()
+                                }
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = game.first,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "High multiplayer stakes",
-                                fontSize = 11.sp,
-                                color = Color.Gray
-                            )
-                        }
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = DarkBg),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.border(1.dp, BorderColor, RoundedCornerShape(6.dp))
+                                if (isInvalid) {
+                                    viewModel.showToast("Please fill all players!")
+                                } else {
+                                    val playersList = when (matchType) {
+                                        "Solo" -> listOf(p1.trim())
+                                        "Duo" -> listOf(p1.trim(), p2.trim())
+                                        else -> listOf(p1.trim(), p2.trim(), p3.trim(), p4.trim())
+                                    }
+                                    val finalTeamName = if (matchType == "Solo") "Solo Player" else teamName.trim().ifBlank { "Unknown Team" }
+                                    val teamMembersString = playersList.joinToString(", ")
+                                    viewModel.registerTournamentWithTeam(tour.id, finalTeamName, teamMembersString) { success ->
+                                        if (success) {
+                                            selectedCasinoTour = null
+                                        }
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = "UPCOMING",
-                                color = AmberGlow,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                            Text("Confirm", color = DarkBg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun CasinoGameCard(
+    gameName: String,
+    posterUrl: String,
+    subtext: String,
+    isPlayable: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+            .clickable { onClick() }
+            .border(1.dp, BorderColor, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            coil.compose.AsyncImage(
+                model = posterUrl,
+                contentDescription = "$gameName Poster",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Dark subtle overlay gradient
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                            startY = 100f
+                        )
+                    )
+            )
+
+            // Info text overlay
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = gameName,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = subtext,
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+            }
+
+            // Top right status badge
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .background(
+                        if (isPlayable) EmeraldGlow.copy(alpha = 0.9f) else AmberGlow.copy(alpha = 0.9f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isPlayable) "PLAY NOW" else "UPCOMING",
+                    color = DarkBg,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -2632,6 +2847,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                     var tgUrlInput by remember { mutableStateOf(globalSettings.tgUrl) }
                     var referralRewardInput by remember { mutableStateOf(globalSettings.referralReward.toString()) }
                     var referralMinDepositInput by remember { mutableStateOf(globalSettings.referralMinDeposit.toString()) }
+                    var minesHouseEdgeSlider by remember { mutableStateOf(globalSettings.minesHouseEdge.toFloat()) }
 
                     // Sync state manually if navigating
                     LaunchedEffect(globalSettings) {
@@ -2640,6 +2856,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                         tgUrlInput = globalSettings.tgUrl
                         referralRewardInput = globalSettings.referralReward.toString()
                         referralMinDepositInput = globalSettings.referralMinDeposit.toString()
+                        minesHouseEdgeSlider = globalSettings.minesHouseEdge.toFloat()
                     }
 
                     Column(
@@ -2741,12 +2958,35 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
+                                Text("Mines Return to Player (RTP): ${minesHouseEdgeSlider.toInt()}%", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                Text("Controls house edge: 100% means perfectly fair payouts (0% house edge); 50% means 50% house edge.", color = Color.Gray, fontSize = 11.sp)
+                                Slider(
+                                    value = minesHouseEdgeSlider,
+                                    onValueChange = { minesHouseEdgeSlider = it },
+                                    valueRange = 50f..100f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = CyanGlow,
+                                        activeTrackColor = CyanGlow,
+                                        inactiveTrackColor = Color.DarkGray
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
                                 Button(
                                     onClick = {
                                         if (upiInput.isNotBlank()) {
                                             val rwd = referralRewardInput.toDoubleOrNull() ?: 50.0
                                             val minDep = referralMinDepositInput.toDoubleOrNull() ?: 20.0
-                                            viewModel.adminUpdateSettings(upiInput.trim(), waUrlInput.trim(), tgUrlInput.trim(), rwd, minDep)
+                                            viewModel.adminUpdateSettings(
+                                                upiInput.trim(),
+                                                waUrlInput.trim(),
+                                                tgUrlInput.trim(),
+                                                rwd,
+                                                minDep,
+                                                minesHouseEdgeSlider.toDouble()
+                                            )
                                         } else {
                                             viewModel.showToast("UPI ID cannot be blank")
                                         }

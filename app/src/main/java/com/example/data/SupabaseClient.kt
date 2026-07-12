@@ -653,7 +653,8 @@ object SupabaseClient {
                             waUrl = settingsObj.optString("wa_url", "https://wa.me/919999999999"),
                             tgUrl = settingsObj.optString("tg_url", "https://t.me/arenaesportssupport"),
                             referralReward = settingsObj.optDouble("referral_reward", 50.0),
-                            referralMinDeposit = settingsObj.optDouble("referral_min_deposit", 20.0)
+                            referralMinDeposit = settingsObj.optDouble("referral_min_deposit", 20.0),
+                            minesHouseEdge = settingsObj.optDouble("mines_house_edge", 97.0)
                         )
                     } else {
                         GlobalSettings()
@@ -673,7 +674,8 @@ object SupabaseClient {
         waUrl: String? = null,
         tgUrl: String? = null,
         referralReward: Double? = null,
-        referralMinDeposit: Double? = null
+        referralMinDeposit: Double? = null,
+        minesHouseEdge: Double? = null
     ): Boolean {
         val url = "${getServerUrl()}/api/settings"
         val bodyJson = JSONObject().apply {
@@ -682,6 +684,7 @@ object SupabaseClient {
             tgUrl?.let { put("tg_url", it) }
             referralReward?.let { put("referral_reward", it) }
             referralMinDeposit?.let { put("referral_min_deposit", it) }
+            minesHouseEdge?.let { put("mines_house_edge", it) }
         }
         val request = Request.Builder()
             .url(url)
@@ -940,6 +943,178 @@ object SupabaseClient {
             Log.e(TAG, "uploadPhoto direct error", e)
             Result.failure(e)
         }
+    }
+
+    fun checkActiveMines(whatsapp: String): MinesActiveResponse {
+        val url = "${getServerUrl()}/api/mines/active/$whatsapp"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                val jsonObj = JSONObject(bodyStr)
+                if (response.isSuccessful && jsonObj.optBoolean("success")) {
+                    val active = jsonObj.optBoolean("active")
+                    val gameObj = jsonObj.optJSONObject("game")
+                    val game = if (active && gameObj != null) parseMinesGame(gameObj) else null
+                    MinesActiveResponse(success = true, active = active, game = game)
+                } else {
+                    MinesActiveResponse(success = false, active = false, error = jsonObj.optString("error", "Unknown error"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "checkActiveMines error", e)
+            MinesActiveResponse(success = false, active = false, error = e.message)
+        }
+    }
+
+    fun startMines(whatsapp: String, betAmount: Double, minesCount: Int): MinesStartResponse {
+        val url = "${getServerUrl()}/api/mines/start"
+        val bodyJson = JSONObject().apply {
+            put("whatsapp_number", whatsapp)
+            put("bet_amount", betAmount)
+            put("mines_count", minesCount)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                val jsonObj = JSONObject(bodyStr)
+                if (response.isSuccessful && jsonObj.optBoolean("success")) {
+                    val gameObj = jsonObj.getJSONObject("game")
+                    val game = parseMinesGame(gameObj)
+                    val balObj = jsonObj.optJSONObject("updatedBalances")
+                    val balances = if (balObj != null) UserBalances(balObj.optDouble("deposit"), balObj.optDouble("withdrawal")) else null
+                    MinesStartResponse(success = true, game = game, updatedBalances = balances)
+                } else {
+                    MinesStartResponse(success = false, game = MinesGame("", 0.0, 0, emptyList(), 1.0, 1.0, "LOST"), error = jsonObj.optString("error", "Failed to start game"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startMines error", e)
+            MinesStartResponse(success = false, game = MinesGame("", 0.0, 0, emptyList(), 1.0, 1.0, "LOST"), error = e.message)
+        }
+    }
+
+    fun revealMines(gameId: String, tileIndex: Int): MinesRevealResponse {
+        val url = "${getServerUrl()}/api/mines/reveal"
+        val bodyJson = JSONObject().apply {
+            put("game_id", gameId)
+            put("tile_index", tileIndex)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                val jsonObj = JSONObject(bodyStr)
+                if (response.isSuccessful && jsonObj.optBoolean("success")) {
+                    val status = jsonObj.optString("status")
+                    val revArr = jsonObj.optJSONArray("revealed")
+                    val revealedList = mutableListOf<Int>()
+                    if (revArr != null) {
+                        for (i in 0 until revArr.length()) {
+                            revealedList.add(revArr.getInt(i))
+                        }
+                    }
+                    val boardArr = jsonObj.optJSONArray("board")
+                    val boardList = mutableListOf<Boolean>()
+                    if (boardArr != null) {
+                        for (i in 0 until boardArr.length()) {
+                            boardList.add(boardArr.getBoolean(i))
+                        }
+                    }
+                    MinesRevealResponse(
+                        success = true,
+                        status = status,
+                        revealed = if (revArr != null) revealedList else null,
+                        multiplier = if (jsonObj.has("multiplier")) jsonObj.optDouble("multiplier") else null,
+                        nextMultiplier = if (jsonObj.has("next_multiplier")) jsonObj.optDouble("next_multiplier") else null,
+                        mineIndex = if (jsonObj.has("mine_index")) jsonObj.optInt("mine_index") else null,
+                        board = if (boardArr != null) boardList else null,
+                        prizeWon = if (jsonObj.has("prize_won")) jsonObj.optDouble("prize_won") else null
+                    )
+                } else {
+                    MinesRevealResponse(success = false, status = "ERROR", error = jsonObj.optString("error", "Reveal failed"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "revealMines error", e)
+            MinesRevealResponse(success = false, status = "ERROR", error = e.message)
+        }
+    }
+
+    fun cashoutMines(gameId: String): MinesCashoutResponse {
+        val url = "${getServerUrl()}/api/mines/cashout"
+        val bodyJson = JSONObject().apply {
+            put("game_id", gameId)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                val jsonObj = JSONObject(bodyStr)
+                if (response.isSuccessful && jsonObj.optBoolean("success")) {
+                    val status = jsonObj.optString("status")
+                    val prizeWon = jsonObj.optDouble("prize_won")
+                    val multiplier = jsonObj.optDouble("multiplier")
+                    val boardArr = jsonObj.getJSONArray("board")
+                    val boardList = mutableListOf<Boolean>()
+                    for (i in 0 until boardArr.length()) {
+                        boardList.add(boardArr.getBoolean(i))
+                    }
+                    val balObj = jsonObj.optJSONObject("updatedBalances")
+                    val balances = if (balObj != null) UserBalances(balObj.optDouble("deposit"), balObj.optDouble("withdrawal")) else null
+                    MinesCashoutResponse(
+                        success = true,
+                        status = status,
+                        prizeWon = prizeWon,
+                        multiplier = multiplier,
+                        board = boardList,
+                        updatedBalances = balances
+                    )
+                } else {
+                    MinesCashoutResponse(success = false, status = "ERROR", prizeWon = 0.0, multiplier = 1.0, board = emptyList(), error = jsonObj.optString("error", "Cashout failed"))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "cashoutMines error", e)
+            MinesCashoutResponse(success = false, status = "ERROR", prizeWon = 0.0, multiplier = 1.0, board = emptyList(), error = e.message)
+        }
+    }
+
+    private fun parseMinesGame(obj: JSONObject): MinesGame {
+        val revArr = obj.optJSONArray("revealed")
+        val revList = mutableListOf<Int>()
+        if (revArr != null) {
+            for (i in 0 until revArr.length()) {
+                revList.add(revArr.getInt(i))
+            }
+        }
+        val boardArr = obj.optJSONArray("board")
+        val boardList = mutableListOf<Boolean>()
+        if (boardArr != null) {
+            for (i in 0 until boardArr.length()) {
+                boardList.add(boardArr.getBoolean(i))
+            }
+        }
+        return MinesGame(
+            id = obj.getString("id"),
+            betAmount = obj.getDouble("bet_amount"),
+            minesCount = obj.getInt("mines_count"),
+            revealed = revList,
+            multiplier = obj.getDouble("multiplier"),
+            nextMultiplier = obj.optDouble("next_multiplier", 1.0),
+            status = obj.getString("status"),
+            board = if (boardArr != null) boardList else null
+        )
     }
 
     private fun parseError(bodyStr: String): String? {

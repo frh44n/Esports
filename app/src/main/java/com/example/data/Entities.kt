@@ -70,7 +70,8 @@ data class GlobalSettings(
     val waUrl: String = "https://wa.me/919999999999",
     val tgUrl: String = "https://t.me/arenaesportssupport",
     val referralReward: Double = 50.0,
-    val referralMinDeposit: Double = 20.0
+    val referralMinDeposit: Double = 20.0,
+    val minesHouseEdge: Double = 97.0
 )
 
 data class AdminStatsResponse(
@@ -107,4 +108,56 @@ data class ReferredUsersResponse(
     val success: Boolean,
     val total: Int,
     val users: List<ReferredUser>
+)
+
+data class MinesGame(
+    val id: String,
+    val betAmount: Double,
+    val minesCount: Int,
+    val revealed: List<Int>,
+    val multiplier: Double,
+    val nextMultiplier: Double,
+    val status: String,
+    val board: List<Boolean>? = null
+)
+
+data class MinesStartResponse(
+    val success: Boolean,
+    val game: MinesGame,
+    val updatedBalances: UserBalances? = null,
+    val error: String? = null
+)
+
+data class MinesRevealResponse(
+    val success: Boolean,
+    val status: String,
+    val revealed: List<Int>? = null,
+    val multiplier: Double? = null,
+    val nextMultiplier: Double? = null,
+    val mineIndex: Int? = null,
+    val board: List<Boolean>? = null,
+    val prizeWon: Double? = null,
+    val error: String? = null
+)
+
+data class MinesCashoutResponse(
+    val success: Boolean,
+    val status: String,
+    val prizeWon: Double,
+    val multiplier: Double,
+    val board: List<Boolean>,
+    val updatedBalances: UserBalances? = null,
+    val error: String? = null
+)
+
+data class MinesActiveResponse(
+    val success: Boolean,
+    val active: Boolean,
+    val game: MinesGame? = null,
+    val error: String? = null
+)
+
+data class UserBalances(
+    val deposit: Double,
+    val withdrawal: Double
 )

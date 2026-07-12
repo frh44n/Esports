@@ -1218,7 +1218,8 @@ function getGlobalSettings() {
     wa_url: "https://wa.me/919999999999",
     tg_url: "https://t.me/arenaesportssupport",
     referral_reward: 50.0,
-    referral_min_deposit: 20.0
+    referral_min_deposit: 20.0,
+    mines_house_edge: 97.0
   };
   try {
     if (fs.existsSync(configFilePath)) {
@@ -1254,13 +1255,16 @@ app.get('/api/settings', (req, res) => {
 
 // Update global config (Admin)
 app.post('/api/settings', (req, res) => {
-  const { upi_id, wa_url, tg_url, referral_reward, referral_min_deposit } = req.body;
+  const { upi_id, wa_url, tg_url, referral_reward, referral_min_deposit, mines_house_edge } = req.body;
   const updates = {};
   if (upi_id && upi_id.trim().length > 0) updates.upi_id = upi_id.trim();
   if (wa_url && wa_url.trim().length > 0) updates.wa_url = wa_url.trim();
   if (tg_url && tg_url.trim().length > 0) updates.tg_url = tg_url.trim();
   if (referral_reward !== undefined) updates.referral_reward = parseFloat(referral_reward) || 0;
   if (referral_min_deposit !== undefined) updates.referral_min_deposit = parseFloat(referral_min_deposit) || 0;
+  if (mines_house_edge !== undefined) {
+    updates.mines_house_edge = Math.min(100.0, Math.max(50.0, parseFloat(mines_house_edge) || 97.0));
+  }
   
   const success = saveGlobalSettings(updates);
   if (success) {
@@ -1628,6 +1632,444 @@ async function handleReferralReward(referrerCode, referredWhatsapp) {
     console.error("Failed to process referral reward:", err);
   }
 }
+
+// ==========================================
+// MINES GAME STATE ENGINE
+// ==========================================
+const minesSessionsFilePath = path.join(__dirname, 'mines_sessions.json');
+
+function loadMinesSessions() {
+  try {
+    if (fs.existsSync(minesSessionsFilePath)) {
+      return JSON.parse(fs.readFileSync(minesSessionsFilePath, 'utf8'));
+    }
+  } catch (e) {
+    console.error("Error reading mines sessions:", e);
+  }
+  return {};
+}
+
+function saveMinesSessions(sessions) {
+  try {
+    fs.writeFileSync(minesSessionsFilePath, JSON.stringify(sessions), 'utf8');
+  } catch (e) {
+    console.error("Error writing mines sessions:", e);
+  }
+}
+
+function nCr(n, r) {
+  if (r < 0 || r > n) return 0;
+  if (r === 0 || r === n) return 1;
+  let res = 1;
+  for (let i = 1; i <= r; i++) {
+    res = res * (n - i + 1) / i;
+  }
+  return res;
+}
+
+function calculateMinesMultiplier(minesCount, revealedCount, rtpPercentage) {
+  if (revealedCount === 0) return 1.0;
+  const safeCount = 25 - minesCount;
+  if (revealedCount > safeCount) return 0.0;
+  
+  const fairMultiplier = nCr(25, revealedCount) / nCr(safeCount, revealedCount);
+  const multiplier = fairMultiplier * (rtpPercentage / 100.0);
+  return Math.round(multiplier * 100) / 100;
+}
+
+// Check Active Session
+app.get('/api/mines/active/:whatsapp', (req, res) => {
+  try {
+    const { whatsapp } = req.params;
+    const sessions = loadMinesSessions();
+    const activeSession = Object.values(sessions).find(s => s.whatsapp_number === whatsapp && s.status === 'ACTIVE');
+    
+    if (activeSession) {
+      const settings = getGlobalSettings();
+      const rtp = settings.mines_house_edge || 97.0;
+      const next_multiplier = calculateMinesMultiplier(activeSession.mines_count, activeSession.revealed.length + 1, rtp);
+      
+      return res.json({
+        success: true,
+        active: true,
+        game: {
+          id: activeSession.id,
+          bet_amount: activeSession.bet_amount,
+          mines_count: activeSession.mines_count,
+          revealed: activeSession.revealed,
+          multiplier: activeSession.multiplier,
+          next_multiplier,
+          status: 'ACTIVE'
+        }
+      });
+    }
+    
+    res.json({ success: true, active: false });
+  } catch (err) {
+    console.error("Error checking active Mines session:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Start Mines Game
+app.post('/api/mines/start', async (req, res) => {
+  try {
+    const { whatsapp_number, bet_amount, mines_count } = req.body;
+    
+    const bet = parseFloat(bet_amount);
+    const minesNum = parseInt(mines_count);
+    
+    if (!whatsapp_number || isNaN(bet) || bet <= 0 || isNaN(minesNum) || minesNum < 1 || minesNum > 24) {
+      return res.status(400).json({ error: "Invalid request parameters" });
+    }
+    
+    // Check if there is already an active session
+    const sessions = loadMinesSessions();
+    const activeSession = Object.values(sessions).find(s => s.whatsapp_number === whatsapp_number && s.status === 'ACTIVE');
+    if (activeSession) {
+      return res.status(400).json({ error: "An active game is already in progress. Please finish or cashout first!" });
+    }
+    
+    // Fetch profile
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .like('whatsapp_number', `${whatsapp_number}%`)
+      .single();
+      
+    if (userError || !user) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+    
+    const depositBal = user.deposit_balance || 0.0;
+    const withdrawalBal = user.withdrawal_balance || 0.0;
+    const totalBal = depositBal + withdrawalBal;
+    
+    if (totalBal < bet) {
+      return res.status(400).json({ error: "Insufficient balance to place bet!" });
+    }
+    
+    // Deduct bet (prioritize deposit balance)
+    let newDeposit = depositBal;
+    let newWithdrawal = withdrawalBal;
+    if (newDeposit >= bet) {
+      newDeposit -= bet;
+    } else {
+      const remaining = bet - newDeposit;
+      newDeposit = 0.0;
+      newWithdrawal -= remaining;
+    }
+    
+    // Update profile balance
+    const { error: balanceError } = await supabase
+      .from('profiles')
+      .update({
+        deposit_balance: newDeposit,
+        withdrawal_balance: newWithdrawal
+      })
+      .eq('id', user.id);
+      
+    if (balanceError) throw balanceError;
+    
+    // Generate board: 25 cells, exactly minesNum mines
+    const board = Array(25).fill(false);
+    let minesPlaced = 0;
+    while (minesPlaced < minesNum) {
+      const randIdx = Math.floor(Math.random() * 25);
+      if (!board[randIdx]) {
+        board[randIdx] = true;
+        minesPlaced++;
+      }
+    }
+    
+    const gameId = `MINES-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const settings = getGlobalSettings();
+    const rtp = settings.mines_house_edge || 97.0;
+    const next_multiplier = calculateMinesMultiplier(minesNum, 1, rtp);
+    
+    // Create session
+    const newSession = {
+      id: gameId,
+      whatsapp_number,
+      bet_amount: bet,
+      mines_count: minesNum,
+      board,
+      revealed: [],
+      multiplier: 1.0,
+      status: 'ACTIVE',
+      timestamp: Date.now()
+    };
+    
+    // Clean old sessions (> 2 hours old)
+    const now = Date.now();
+    for (const key in sessions) {
+      if (now - sessions[key].timestamp > 7200000) {
+        delete sessions[key];
+      }
+    }
+    
+    sessions[gameId] = newSession;
+    saveMinesSessions(sessions);
+    
+    // Log bet transaction
+    await supabase
+      .from('transactions')
+      .insert([
+        {
+          whatsapp_number,
+          type: 'MINES_BET',
+          amount: bet,
+          upi_id: 'MINES_GAME',
+          reference_number: `BET-${gameId}`,
+          status: 'APPROVED',
+          timestamp: Date.now()
+        }
+      ]);
+      
+    res.json({
+      success: true,
+      game: {
+        id: gameId,
+        bet_amount: bet,
+        mines_count: minesNum,
+        revealed: [],
+        multiplier: 1.0,
+        next_multiplier,
+        status: 'ACTIVE'
+      },
+      updatedBalances: { deposit: newDeposit, withdrawal: newWithdrawal }
+    });
+  } catch (err) {
+    console.error("Error starting Mines game:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reveal Cell
+app.post('/api/mines/reveal', async (req, res) => {
+  try {
+    const { game_id, tile_index } = req.body;
+    const tileIdx = parseInt(tile_index);
+    
+    if (!game_id || isNaN(tileIdx) || tileIdx < 0 || tileIdx > 24) {
+      return res.status(400).json({ error: "Invalid cell index" });
+    }
+    
+    const sessions = loadMinesSessions();
+    const session = sessions[game_id];
+    
+    if (!session) {
+      return res.status(404).json({ error: "Game session not found" });
+    }
+    
+    if (session.status !== 'ACTIVE') {
+      return res.status(400).json({ error: "Game session is no longer active" });
+    }
+    
+    if (session.revealed.includes(tileIdx)) {
+      return res.status(400).json({ error: "Cell already revealed" });
+    }
+    
+    const settings = getGlobalSettings();
+    const rtp = settings.mines_house_edge || 97.0;
+    
+    // Check if hit mine
+    if (session.board[tileIdx] === true) {
+      // LOST
+      session.status = 'LOST';
+      saveMinesSessions(sessions);
+      
+      // Log game history
+      await supabase
+        .from('game_histories')
+        .insert([
+          {
+            whatsapp_number: session.whatsapp_number,
+            game_name: `Mines (Bet: ₹${session.bet_amount}, Mines: ${session.mines_count}, Multiplier: 0.00x)`,
+            prize_won: 0,
+            status: 'COMPLETED',
+            timestamp: Date.now()
+          }
+        ]);
+        
+      return res.json({
+        success: true,
+        status: 'LOST',
+        mine_index: tileIdx,
+        board: session.board // Reveal whole board on lose
+      });
+    }
+    
+    // GEM revealed!
+    session.revealed.push(tileIdx);
+    const newRevealedCount = session.revealed.length;
+    const multiplier = calculateMinesMultiplier(session.mines_count, newRevealedCount, rtp);
+    session.multiplier = multiplier;
+    
+    const safeCount = 25 - session.mines_count;
+    
+    // If all safe spots are revealed, auto cashout!
+    if (newRevealedCount === safeCount) {
+      session.status = 'WON';
+      saveMinesSessions(sessions);
+      
+      const finalPayout = Math.round(session.bet_amount * multiplier * 100) / 100;
+      
+      // Update user profile balance
+      const { data: user, error: userError } = await supabase
+        .from('profiles')
+        .select('*')
+        .like('whatsapp_number', `${session.whatsapp_number}%`)
+        .single();
+        
+      if (!userError && user) {
+        const newWithdrawal = (user.withdrawal_balance || 0.0) + finalPayout;
+        await supabase
+          .from('profiles')
+          .update({ withdrawal_balance: newWithdrawal })
+          .eq('id', user.id);
+          
+        // Log transaction
+        await supabase
+          .from('transactions')
+          .insert([
+            {
+              whatsapp_number: session.whatsapp_number,
+              type: 'MINES_WIN',
+              amount: finalPayout,
+              upi_id: 'MINES_GAME',
+              reference_number: `WIN-${session.id}`,
+              status: 'APPROVED',
+              timestamp: Date.now()
+            }
+          ]);
+      }
+      
+      // Log history
+      await supabase
+        .from('game_histories')
+        .insert([
+          {
+            whatsapp_number: session.whatsapp_number,
+            game_name: `Mines (Bet: ₹${session.bet_amount}, Mines: ${session.mines_count}, Multiplier: ${multiplier}x)`,
+            prize_won: finalPayout,
+            status: 'COMPLETED',
+            timestamp: Date.now()
+          }
+        ]);
+        
+      return res.json({
+        success: true,
+        status: 'WON',
+        prize_won: finalPayout,
+        multiplier,
+        board: session.board
+      });
+    }
+    
+    saveMinesSessions(sessions);
+    const next_multiplier = calculateMinesMultiplier(session.mines_count, newRevealedCount + 1, rtp);
+    
+    res.json({
+      success: true,
+      status: 'ACTIVE',
+      revealed: session.revealed,
+      multiplier,
+      next_multiplier
+    });
+  } catch (err) {
+    console.error("Error revealing cell:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cashout Mines Game
+app.post('/api/mines/cashout', async (req, res) => {
+  try {
+    const { game_id } = req.body;
+    if (!game_id) {
+      return res.status(400).json({ error: "Missing game ID" });
+    }
+    
+    const sessions = loadMinesSessions();
+    const session = sessions[game_id];
+    
+    if (!session) {
+      return res.status(404).json({ error: "Game session not found" });
+    }
+    
+    if (session.status !== 'ACTIVE') {
+      return res.status(400).json({ error: "Game is no longer active" });
+    }
+    
+    if (session.revealed.length === 0) {
+      return res.status(400).json({ error: "Cannot cashout without making at least 1 correct guess!" });
+    }
+    
+    session.status = 'WON';
+    saveMinesSessions(sessions);
+    
+    const finalPayout = Math.round(session.bet_amount * session.multiplier * 100) / 100;
+    
+    // Update user balance
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .like('whatsapp_number', `${session.whatsapp_number}%`)
+      .single();
+      
+    let updatedBalances = null;
+    if (!userError && user) {
+      const newWithdrawal = (user.withdrawal_balance || 0.0) + finalPayout;
+      await supabase
+        .from('profiles')
+        .update({ withdrawal_balance: newWithdrawal })
+        .eq('id', user.id);
+        
+      updatedBalances = { deposit: user.deposit_balance, withdrawal: newWithdrawal };
+      
+      // Log transaction
+      await supabase
+        .from('transactions')
+        .insert([
+          {
+            whatsapp_number: session.whatsapp_number,
+            type: 'MINES_WIN',
+            amount: finalPayout,
+            upi_id: 'MINES_GAME',
+            reference_number: `WIN-${session.id}`,
+            status: 'APPROVED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
+    
+    // Log history
+    await supabase
+      .from('game_histories')
+      .insert([
+        {
+          whatsapp_number: session.whatsapp_number,
+          game_name: `Mines (Bet: ₹${session.bet_amount}, Mines: ${session.mines_count}, Multiplier: ${session.multiplier}x)`,
+          prize_won: finalPayout,
+          status: 'COMPLETED',
+          timestamp: Date.now()
+        }
+      ]);
+      
+    res.json({
+      success: true,
+      status: 'WON',
+      prize_won: finalPayout,
+      multiplier: session.multiplier,
+      board: session.board,
+      updatedBalances
+    });
+  } catch (err) {
+    console.error("Error cashing out Mines:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 // Start Server

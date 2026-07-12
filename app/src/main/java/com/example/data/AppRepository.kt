@@ -243,9 +243,26 @@ class AppRepository(private val appDao: AppDao) {
         waUrl: String? = null,
         tgUrl: String? = null,
         referralReward: Double? = null,
-        referralMinDeposit: Double? = null
+        referralMinDeposit: Double? = null,
+        minesHouseEdge: Double? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit)
+        SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit, minesHouseEdge)
+    }
+
+    suspend fun checkActiveMines(whatsapp: String): MinesActiveResponse = withContext(Dispatchers.IO) {
+        SupabaseClient.checkActiveMines(whatsapp)
+    }
+
+    suspend fun startMines(whatsapp: String, betAmount: Double, minesCount: Int): MinesStartResponse = withContext(Dispatchers.IO) {
+        SupabaseClient.startMines(whatsapp, betAmount, minesCount)
+    }
+
+    suspend fun revealMines(gameId: String, tileIndex: Int): MinesRevealResponse = withContext(Dispatchers.IO) {
+        SupabaseClient.revealMines(gameId, tileIndex)
+    }
+
+    suspend fun cashoutMines(gameId: String): MinesCashoutResponse = withContext(Dispatchers.IO) {
+        SupabaseClient.cashoutMines(gameId)
     }
 
     suspend fun fetchAdminStats(): AdminStats? = withContext(Dispatchers.IO) {
