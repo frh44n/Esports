@@ -1354,8 +1354,9 @@ app.post('/api/settings', (req, res) => {
   if (tg_url && tg_url.trim().length > 0) updates.tg_url = tg_url.trim();
   if (referral_reward !== undefined) updates.referral_reward = parseFloat(referral_reward) || 0;
   if (referral_min_deposit !== undefined) updates.referral_min_deposit = parseFloat(referral_min_deposit) || 0;
-  if (mines_house_edge !== undefined) {
-    updates.mines_house_edge = Math.min(100.0, Math.max(0.0, parseFloat(mines_house_edge) !== undefined && !isNaN(parseFloat(mines_house_edge)) ? parseFloat(mines_house_edge) : 97.0));
+  if (mines_house_edge !== undefined && mines_house_edge !== null) {
+    const parsed = parseFloat(mines_house_edge);
+    updates.mines_house_edge = (!isNaN(parsed)) ? Math.min(100.0, Math.max(0.0, parsed)) : 97.0;
   }
   console.log("POST /api/settings updates to save:", updates);
   
@@ -1781,7 +1782,7 @@ app.get('/api/mines/active/:whatsapp', (req, res) => {
     
     if (activeSession) {
       const settings = getGlobalSettings();
-      const rtp = settings.mines_house_edge || 97.0;
+      const rtp = settings.mines_house_edge !== undefined ? parseFloat(settings.mines_house_edge) : 97.0;
       const next_multiplier = calculateMinesMultiplier(activeSession.mines_count, activeSession.revealed.length + 1, rtp);
       
       return res.json({
@@ -1879,7 +1880,7 @@ app.post('/api/mines/start', async (req, res) => {
     
     const gameId = `MINES-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const settings = getGlobalSettings();
-    const rtp = settings.mines_house_edge || 97.0;
+    const rtp = settings.mines_house_edge !== undefined ? parseFloat(settings.mines_house_edge) : 97.0;
     const next_multiplier = calculateMinesMultiplier(minesNum, 1, rtp);
     
     // Create session
@@ -2045,6 +2046,21 @@ app.post('/api/mines/reveal', async (req, res) => {
     }
     
     // GEM revealed!
+    if (session.board[tileIdx] === true) {
+      // Move this bomb to an unrevealed, non-clicked tile that is currently safe
+      const candidates = [];
+      for (let i = 0; i < 25; i++) {
+        if (i !== tileIdx && !session.revealed.includes(i) && session.board[i] === false) {
+          candidates.push(i);
+        }
+      }
+      if (candidates.length > 0) {
+        const swapIdx = candidates[Math.floor(Math.random() * candidates.length)];
+        session.board[tileIdx] = false;
+        session.board[swapIdx] = true;
+      }
+    }
+    
     session.revealed.push(tileIdx);
     const newRevealedCount = session.revealed.length;
     const multiplier = calculateMinesMultiplier(session.mines_count, newRevealedCount, rtp);
