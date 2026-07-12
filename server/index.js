@@ -425,6 +425,88 @@ app.patch('/api/tournaments/:id/room', async (req, res) => {
   }
 });
 
+// Start Tournament (Admin)
+app.post('/api/tournaments/:id/start', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: tour, error: fetchErr } = await supabase
+      .from('tournaments')
+      .select('start_time')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+    if (!tour) return res.status(404).json({ error: "Tournament not found" });
+
+    let currentStartTime = tour.start_time || "";
+    if (!currentStartTime.includes("[STARTED]")) {
+      currentStartTime = currentStartTime.replace("[FINISHED]", "").trim() + " [STARTED]";
+    }
+
+    const { data, error } = await supabase
+      .from('tournaments')
+      .update({ start_time: currentStartTime })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, tournament: data });
+  } catch (error) {
+    console.error("Error starting tournament:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Finish Tournament (Admin)
+app.post('/api/tournaments/:id/finish', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: tour, error: fetchErr } = await supabase
+      .from('tournaments')
+      .select('start_time')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+    if (!tour) return res.status(404).json({ error: "Tournament not found" });
+
+    let currentStartTime = tour.start_time || "";
+    currentStartTime = currentStartTime.replace("[STARTED]", "").trim();
+    if (!currentStartTime.includes("[FINISHED]")) {
+      currentStartTime = currentStartTime + " [FINISHED]";
+    }
+
+    const { data, error } = await supabase
+      .from('tournaments')
+      .update({ 
+        start_time: currentStartTime,
+        room_id: null,
+        room_password: null
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const { error: deleteRegsErr } = await supabase
+      .from('registrations')
+      .delete()
+      .eq('tournament_id', id);
+
+    if (deleteRegsErr) throw deleteRegsErr;
+
+    res.json({ success: true, tournament: data });
+  } catch (error) {
+    console.error("Error finishing tournament:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete Tournament (Admin)
 app.delete('/api/tournaments/:id', async (req, res) => {
   try {

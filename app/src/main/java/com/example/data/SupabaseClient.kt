@@ -268,6 +268,40 @@ object SupabaseClient {
         }
     }
 
+    fun startTournament(id: Int): Boolean {
+        val url = "${getServerUrl()}/api/tournaments/$id/start"
+        val request = Request.Builder()
+            .url(url)
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startTournament error", e)
+            false
+        }
+    }
+
+    fun finishTournament(id: Int): Boolean {
+        val url = "${getServerUrl()}/api/tournaments/$id/finish"
+        val request = Request.Builder()
+            .url(url)
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "finishTournament error", e)
+            false
+        }
+    }
+
     fun fetchRegistrations(whatsapp: String): List<Registration> {
         val url = "${getServerUrl()}/api/users/$whatsapp/registrations"
         val request = Request.Builder()

@@ -729,6 +729,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun adminStartTournament(id: Int) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val ok = repository.startTournament(id)
+            _isRefreshing.value = false
+            if (ok) {
+                _toastMessage.value = "Tournament started successfully!"
+                refreshOnlineData()
+            } else {
+                _toastMessage.value = "Failed to start tournament."
+            }
+        }
+    }
+
+    fun adminFinishTournament(id: Int) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val ok = repository.finishTournament(id)
+            _isRefreshing.value = false
+            if (ok) {
+                _toastMessage.value = "Tournament finished successfully!"
+                refreshOnlineData()
+            } else {
+                _toastMessage.value = "Failed to finish tournament."
+            }
+        }
+    }
+
     fun uploadPhoto(base64Image: String, filename: String, mimeType: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             _isRefreshing.value = true

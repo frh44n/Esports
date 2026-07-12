@@ -824,7 +824,7 @@ fun EsportsSection(viewModel: MainViewModel) {
     var selectedTournamentForInfo by remember { mutableStateOf<Tournament?>(null) }
 
     // Check if the user is registered for ANY tournament
-    val registeredTournaments = tournaments.filter { it.isJoined }
+    val registeredTournaments = tournaments.filter { it.isJoined && !it.startTime.contains("[FINISHED]") }
     val latestJoined = registeredTournaments.lastOrNull()
     val userRegistration = latestJoined?.let { tour -> myRegistrations.find { it.tournamentId == tour.id } }
     
@@ -918,7 +918,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Start Time: ${latestJoined.startTime}",
+                                text = "Start Time: ${latestJoined.startTime.replace("[STARTED]", "").replace("[FINISHED]", "").trim()}",
                                 fontSize = 13.sp,
                                 color = AmberGlow,
                                 fontWeight = FontWeight.Medium
@@ -976,7 +976,11 @@ fun EsportsSection(viewModel: MainViewModel) {
         }
 
         // Tournaments List
-        val filteredTournaments = tournaments.filter { it.game == selectedGame }
+        val filteredTournaments = tournaments.filter { 
+            it.game == selectedGame && 
+            !it.startTime.contains("[STARTED]") && 
+            !it.startTime.contains("[FINISHED]") 
+        }
 
         if (filteredTournaments.isEmpty()) {
             Box(
@@ -1052,7 +1056,7 @@ fun EsportsSection(viewModel: MainViewModel) {
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "START TIME: ${tour.startTime}",
+                        text = "START TIME: ${tour.startTime.replace("[STARTED]", "").replace("[FINISHED]", "").trim()}",
                         fontSize = 12.sp,
                         color = Color.LightGray,
                         fontWeight = FontWeight.Medium
@@ -1521,7 +1525,7 @@ fun TournamentItemTile(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = tournament.startTime,
+                            text = tournament.startTime.replace("[STARTED]", "").replace("[FINISHED]", "").trim(),
                             fontSize = 11.sp,
                             color = Color.LightGray,
                             fontWeight = FontWeight.Medium
@@ -3238,8 +3242,60 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column(modifier = Modifier.padding(12.dp)) {
+                                                val isStarted = tour.startTime.contains("[STARTED]")
+                                                val isFinished = tour.startTime.contains("[FINISHED]")
+                                                val displayStartTime = tour.startTime.replace("[STARTED]", "").replace("[FINISHED]", "").trim()
+
                                                 Text("[ID: ${tour.id}] ${tour.title}", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                                                Text("Game: ${tour.game} | Start: ${tour.startTime}", color = Color.Gray, fontSize = 11.sp)
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                 ) {
+                                                     Text("Game: ${tour.game} | Start: $displayStartTime", color = Color.Gray, fontSize = 11.sp)
+                                                     if (isStarted) {
+                                                         Card(
+                                                             colors = CardDefaults.cardColors(containerColor = EmeraldGlow.copy(alpha = 0.2f)),
+                                                             shape = RoundedCornerShape(4.dp),
+                                                             border = BorderStroke(1.dp, EmeraldGlow)
+                                                         ) {
+                                                             Text(
+                                                                 text = "STARTED",
+                                                                 color = EmeraldGlow,
+                                                                 fontSize = 9.sp,
+                                                                 fontWeight = FontWeight.Bold,
+                                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                             )
+                                                         }
+                                                     } else if (isFinished) {
+                                                         Card(
+                                                             colors = CardDefaults.cardColors(containerColor = Color.Gray.copy(alpha = 0.2f)),
+                                                             shape = RoundedCornerShape(4.dp),
+                                                             border = BorderStroke(1.dp, Color.Gray)
+                                                         ) {
+                                                             Text(
+                                                                 text = "FINISHED",
+                                                                 color = Color.Gray,
+                                                                 fontSize = 9.sp,
+                                                                 fontWeight = FontWeight.Bold,
+                                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                             )
+                                                         }
+                                                     } else {
+                                                         Card(
+                                                             colors = CardDefaults.cardColors(containerColor = CyanGlow.copy(alpha = 0.2f)),
+                                                             shape = RoundedCornerShape(4.dp),
+                                                             border = BorderStroke(1.dp, CyanGlow)
+                                                         ) {
+                                                             Text(
+                                                                 text = "UPCOMING",
+                                                                 color = CyanGlow,
+                                                                 fontSize = 9.sp,
+                                                                 fontWeight = FontWeight.Bold,
+                                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                             )
+                                                         }
+                                                     }
+                                                 }
                                                 Text("Fee: ₹${tour.entryFee} | Pool: ₹${tour.prizePool}", color = CyanGlow, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
 
                                                 Spacer(modifier = Modifier.height(10.dp))
@@ -3322,6 +3378,32 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                         modifier = Modifier.weight(1f)
                                                     ) {
                                                         Text("Delete", fontSize = 11.sp)
+                                                    }
+                                                }
+
+                                                if (!isFinished) {
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        if (!isStarted) {
+                                                            Button(
+                                                                onClick = { viewModel.adminStartTournament(tour.id) },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
+                                                                modifier = Modifier.weight(1f)
+                                                            ) {
+                                                                Text("Start Match", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                                            }
+                                                        } else {
+                                                            Button(
+                                                                onClick = { viewModel.adminFinishTournament(tour.id) },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = AmberGlow),
+                                                                modifier = Modifier.weight(1f)
+                                                            ) {
+                                                                Text("Mark Finished", color = DarkBg, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -3796,7 +3878,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                     Text("Title: ${tour.title}", color = Color.White, fontWeight = FontWeight.Bold)
                                     Text("Game Category: ${tour.game}", color = Color.LightGray)
                                     Text("Entry Fee: ₹${tour.entryFee}", color = Color.LightGray)
-                                    Text("Start Date/Time: ${tour.startTime}", color = Color.LightGray)
+                                    Text("Start Date/Time: ${tour.startTime.replace("[STARTED]", "").replace("[FINISHED]", "").trim()}", color = Color.LightGray)
                                     Text("Total Prize Pool: ₹${tour.prizePool}", color = Color.LightGray)
 
                                     Spacer(modifier = Modifier.height(6.dp))

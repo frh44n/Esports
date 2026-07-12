@@ -210,6 +210,14 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.deleteTournament(id)
     }
 
+    suspend fun startTournament(id: Int): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.startTournament(id)
+    }
+
+    suspend fun finishTournament(id: Int): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.finishTournament(id)
+    }
+
     suspend fun completeGame(gameHistoryId: Int, prizeWon: Double, winnerWhatsapp: String): Boolean = withContext(Dispatchers.IO) {
         val success = SupabaseClient.updateGameHistoryStatus(gameHistoryId, "COMPLETED", prizeWon)
         if (success) {
