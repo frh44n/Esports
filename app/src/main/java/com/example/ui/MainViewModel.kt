@@ -54,6 +54,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _globalSettings = MutableStateFlow(com.example.data.GlobalSettings())
     val globalSettings: StateFlow<com.example.data.GlobalSettings> = _globalSettings.asStateFlow()
 
+    private val _casinoGames = MutableStateFlow<List<com.example.data.CasinoGame>>(emptyList())
+    val casinoGames: StateFlow<List<com.example.data.CasinoGame>> = _casinoGames.asStateFlow()
+
     private val _searchedUser = MutableStateFlow<User?>(null)
     val searchedUser: StateFlow<User?> = _searchedUser.asStateFlow()
 
@@ -235,6 +238,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val settings = repository.getGlobalSettings()
                 _dynamicUpiId.value = settings.upiId
                 _globalSettings.value = settings
+
+                // Fetch dynamic casino games
+                try {
+                    val games = repository.getCasinoGames()
+                    _casinoGames.value = games
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "refreshOnlineData load casino games error", e)
+                }
 
                 // Sync latest profile balances from Supabase
                 val updatedUser = repository.syncProfile(user.whatsappNumber)
@@ -446,6 +457,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 _toastMessage.value = "Failed to update settings"
             }
+        }
+    }
+
+    fun loadCasinoGames() {
+        viewModelScope.launch {
+            try {
+                val games = repository.getCasinoGames()
+                _casinoGames.value = games
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "loadCasinoGames error", e)
+            }
+        }
+    }
+
+    fun adminUpdateCasinoGame(id: Int?, name: String, posterUrl: String?, isActive: Boolean?) {
+        viewModelScope.launch {
+            val ok = repository.updateCasinoGame(id, name, posterUrl, isActive)
+            if (ok) {
+                _toastMessage.value = "Casino game updated!"
+                loadCasinoGames()
+            } else {
+                _toastMessage.value = "Failed to update casino game"
+            }
+        }
+    }
+
+    suspend fun uploadCasinoPoster(base64Data: String, filename: String, mimeType: String = "image/jpeg"): String? {
+        return try {
+            repository.uploadImage(base64Data, filename, mimeType)
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "uploadCasinoPoster error", e)
+            null
         }
     }
 

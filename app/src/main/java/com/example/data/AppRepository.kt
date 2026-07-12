@@ -249,6 +249,27 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit, minesHouseEdge)
     }
 
+    suspend fun getCasinoGames(): List<CasinoGame> = withContext(Dispatchers.IO) {
+        SupabaseClient.fetchCasinoGames()
+    }
+
+    suspend fun updateCasinoGame(
+        id: Int? = null,
+        name: String,
+        posterUrl: String? = null,
+        isActive: Boolean? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.updateCasinoGame(id, name, posterUrl, isActive)
+    }
+
+    suspend fun uploadImage(
+        base64Data: String,
+        filename: String = "poster.jpg",
+        mimeType: String = "image/jpeg"
+    ): String? = withContext(Dispatchers.IO) {
+        SupabaseClient.uploadImage(base64Data, filename, mimeType)
+    }
+
     suspend fun checkActiveMines(whatsapp: String): MinesActiveResponse = withContext(Dispatchers.IO) {
         SupabaseClient.checkActiveMines(whatsapp)
     }

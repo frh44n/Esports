@@ -1248,6 +1248,97 @@ function saveGlobalSettings(newSettings) {
   }
 }
 
+const casinoGamesFilePath = path.join(__dirname, 'casino_games.json');
+
+function getCasinoGames() {
+  const defaultGames = [
+    {
+      id: 1,
+      name: "Ludo Classic",
+      poster_url: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80",
+      is_active: true
+    },
+    {
+      id: 2,
+      name: "Mines Sweeper",
+      poster_url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+      is_active: true
+    }
+  ];
+  try {
+    if (fs.existsSync(casinoGamesFilePath)) {
+      const fileData = fs.readFileSync(casinoGamesFilePath, 'utf8');
+      return JSON.parse(fileData);
+    } else {
+      fs.writeFileSync(casinoGamesFilePath, JSON.stringify(defaultGames), 'utf8');
+      return defaultGames;
+    }
+  } catch (e) {
+    console.error("Error reading casino games:", e);
+    return defaultGames;
+  }
+}
+
+function saveCasinoGamesList(games) {
+  try {
+    fs.writeFileSync(casinoGamesFilePath, JSON.stringify(games), 'utf8');
+    return true;
+  } catch (e) {
+    console.error("Error writing casino games:", e);
+    return false;
+  }
+}
+
+// Get Casino Games List
+app.get('/api/casino/games', (req, res) => {
+  res.json({ success: true, games: getCasinoGames() });
+});
+
+// Update or Create Casino Game Poster / Details
+app.post('/api/casino/games', (req, res) => {
+  const { id, name, poster_url, is_active } = req.body;
+  const games = getCasinoGames();
+  
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: "Game name is required" });
+  }
+  
+  const targetId = parseInt(id);
+  if (targetId) {
+    // Update existing game
+    const idx = games.findIndex(g => g.id === targetId);
+    if (idx !== -1) {
+      games[idx].name = name.trim();
+      if (poster_url) games[idx].poster_url = poster_url.trim();
+      if (is_active !== undefined) games[idx].is_active = !!is_active;
+    } else {
+      // Add as new with specified ID
+      games.push({
+        id: targetId,
+        name: name.trim(),
+        poster_url: poster_url ? poster_url.trim() : "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+        is_active: is_active !== undefined ? !!is_active : true
+      });
+    }
+  } else {
+    // Add as new game with incremented ID
+    const nextId = games.length > 0 ? Math.max(...games.map(g => g.id)) + 1 : 1;
+    games.push({
+      id: nextId,
+      name: name.trim(),
+      poster_url: poster_url ? poster_url.trim() : "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+      is_active: is_active !== undefined ? !!is_active : true
+    });
+  }
+  
+  const success = saveCasinoGamesList(games);
+  if (success) {
+    res.json({ success: true, games: getCasinoGames() });
+  } else {
+    res.status(500).json({ error: "Failed to persist casino games" });
+  }
+});
+
 // Get current config
 app.get('/api/settings', (req, res) => {
   res.json({ success: true, settings: getGlobalSettings() });
@@ -1255,6 +1346,7 @@ app.get('/api/settings', (req, res) => {
 
 // Update global config (Admin)
 app.post('/api/settings', (req, res) => {
+  console.log("POST /api/settings body:", req.body);
   const { upi_id, wa_url, tg_url, referral_reward, referral_min_deposit, mines_house_edge } = req.body;
   const updates = {};
   if (upi_id && upi_id.trim().length > 0) updates.upi_id = upi_id.trim();
@@ -1263,12 +1355,15 @@ app.post('/api/settings', (req, res) => {
   if (referral_reward !== undefined) updates.referral_reward = parseFloat(referral_reward) || 0;
   if (referral_min_deposit !== undefined) updates.referral_min_deposit = parseFloat(referral_min_deposit) || 0;
   if (mines_house_edge !== undefined) {
-    updates.mines_house_edge = Math.min(100.0, Math.max(50.0, parseFloat(mines_house_edge) || 97.0));
+    updates.mines_house_edge = Math.min(100.0, Math.max(0.0, parseFloat(mines_house_edge) !== undefined && !isNaN(parseFloat(mines_house_edge)) ? parseFloat(mines_house_edge) : 97.0));
   }
+  console.log("POST /api/settings updates to save:", updates);
   
   const success = saveGlobalSettings(updates);
   if (success) {
-    res.json({ success: true, settings: getGlobalSettings() });
+    const freshSettings = getGlobalSettings();
+    console.log("POST /api/settings fresh settings stored:", freshSettings);
+    res.json({ success: true, settings: freshSettings });
   } else {
     res.status(500).json({ error: "Failed to persist settings on server" });
   }

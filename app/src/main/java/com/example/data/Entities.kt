@@ -74,6 +74,13 @@ data class GlobalSettings(
     val minesHouseEdge: Double = 97.0
 )
 
+data class CasinoGame(
+    val id: Int = 0,
+    val name: String,
+    val posterUrl: String,
+    val isActive: Boolean = true
+)
+
 data class AdminStatsResponse(
     val success: Boolean,
     val stats: AdminStats

@@ -47,6 +47,7 @@ import com.example.data.Tournament
 import com.example.data.Transaction
 import com.example.data.SupabaseClient
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
@@ -1589,12 +1590,17 @@ fun TournamentItemTile(
 fun CasinoSection(viewModel: MainViewModel) {
     var showMinesGame by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        viewModel.loadCasinoGames()
+    }
+
     if (showMinesGame) {
         MinesGameScreen(viewModel = viewModel, onBack = { showMinesGame = false })
         return
     }
 
     val tournaments by viewModel.allTournaments.collectAsStateWithLifecycle()
+    val casinoGames by viewModel.casinoGames.collectAsStateWithLifecycle()
     var selectedCasinoTour by remember { mutableStateOf<Tournament?>(null) }
 
     // Filter tournaments created specifically as "Casino" game type (case-insensitive)
@@ -1604,6 +1610,19 @@ fun CasinoSection(viewModel: MainViewModel) {
             it.game.lowercase().contains("casino")
         }.sortedByDescending { it.id }
     }
+
+    val ludoGame = remember(casinoGames) {
+        casinoGames.firstOrNull { it.name.lowercase().contains("ludo") }
+    }
+    val minesGame = remember(casinoGames) {
+        casinoGames.firstOrNull { it.name.lowercase().contains("mines") }
+    }
+
+    val ludoPoster = ludoGame?.posterUrl?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80"
+    val ludoName = ludoGame?.name ?: "Ludo Classic"
+
+    val minesPoster = minesGame?.posterUrl?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80"
+    val minesName = minesGame?.name ?: "Mines Sweeper"
 
     // Prepare exactly 2 games to display
     val game1 = dbCasinoGames.getOrNull(0)
@@ -1634,15 +1653,15 @@ fun CasinoSection(viewModel: MainViewModel) {
             // Render Game 1
             item {
                 CasinoGameCard(
-                    gameName = game1?.title ?: "Ludo Classic",
-                    posterUrl = game1?.posterRes?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80",
+                    gameName = ludoName,
+                    posterUrl = ludoPoster,
                     subtext = if (game1 != null) "Prize Pool: ₹${game1.prizePool} • Entry: ₹${game1.entryFee}" else "Instant multiplayer board game with massive payouts!",
                     isPlayable = game1 != null,
                     onClick = {
                         if (game1 != null) {
                             selectedCasinoTour = game1
                         } else {
-                            viewModel.showToast("Upcoming: Ludo Classic game will be live shortly!")
+                            viewModel.showToast("Upcoming: $ludoName game will be live shortly!")
                         }
                     }
                 )
@@ -1651,8 +1670,8 @@ fun CasinoSection(viewModel: MainViewModel) {
             // Render Game 2
             item {
                 CasinoGameCard(
-                    gameName = game2?.title ?: "Mines Sweeper",
-                    posterUrl = game2?.posterRes?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+                    gameName = minesName,
+                    posterUrl = minesPoster,
                     subtext = if (game2 != null) "Prize Pool: ₹${game2.prizePool} • Entry: ₹${game2.entryFee}" else "Predict safe spots, avoid explosives, multiply your stakes!",
                     isPlayable = true, // Force playable as we have integrated the live game!
                     onClick = {
@@ -2709,6 +2728,7 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
             Tab(selected = adminSection == 5, onClick = { adminSection = 5 }, text = { Text("Teams & Rewards", fontSize = 12.sp) })
             Tab(selected = adminSection == 6, onClick = { adminSection = 6 }, text = { Text("Tour Search", fontSize = 12.sp) })
             Tab(selected = adminSection == 7, onClick = { adminSection = 7 }, text = { Text("Records", fontSize = 12.sp) })
+            Tab(selected = adminSection == 8, onClick = { adminSection = 8 }, text = { Text("Casino Games", fontSize = 12.sp) })
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -2842,22 +2862,12 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                 }
                 2 -> {
                     // Global Settings panel
-                    var upiInput by remember { mutableStateOf(globalSettings.upiId) }
-                    var waUrlInput by remember { mutableStateOf(globalSettings.waUrl) }
-                    var tgUrlInput by remember { mutableStateOf(globalSettings.tgUrl) }
-                    var referralRewardInput by remember { mutableStateOf(globalSettings.referralReward.toString()) }
-                    var referralMinDepositInput by remember { mutableStateOf(globalSettings.referralMinDeposit.toString()) }
-                    var minesHouseEdgeSlider by remember { mutableStateOf(globalSettings.minesHouseEdge.toFloat()) }
-
-                    // Sync state manually if navigating
-                    LaunchedEffect(globalSettings) {
-                        upiInput = globalSettings.upiId
-                        waUrlInput = globalSettings.waUrl
-                        tgUrlInput = globalSettings.tgUrl
-                        referralRewardInput = globalSettings.referralReward.toString()
-                        referralMinDepositInput = globalSettings.referralMinDeposit.toString()
-                        minesHouseEdgeSlider = globalSettings.minesHouseEdge.toFloat()
-                    }
+                    var upiInput by remember(globalSettings) { mutableStateOf(globalSettings.upiId) }
+                    var waUrlInput by remember(globalSettings) { mutableStateOf(globalSettings.waUrl) }
+                    var tgUrlInput by remember(globalSettings) { mutableStateOf(globalSettings.tgUrl) }
+                    var referralRewardInput by remember(globalSettings) { mutableStateOf(globalSettings.referralReward.toString()) }
+                    var referralMinDepositInput by remember(globalSettings) { mutableStateOf(globalSettings.referralMinDeposit.toString()) }
+                    var minesHouseEdgeSlider by remember(globalSettings) { mutableStateOf(globalSettings.minesHouseEdge.toFloat()) }
 
                     Column(
                         modifier = Modifier
@@ -2959,11 +2969,11 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                 Spacer(modifier = Modifier.height(16.dp))
 
                                 Text("Mines Return to Player (RTP): ${minesHouseEdgeSlider.toInt()}%", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                                Text("Controls house edge: 100% means perfectly fair payouts (0% house edge); 50% means 50% house edge.", color = Color.Gray, fontSize = 11.sp)
+                                Text("Controls house edge: 100% means perfectly fair payouts (0% house edge); 0% means maximum house edge (100% house edge).", color = Color.Gray, fontSize = 11.sp)
                                 Slider(
                                     value = minesHouseEdgeSlider,
                                     onValueChange = { minesHouseEdgeSlider = it },
-                                    valueRange = 50f..100f,
+                                    valueRange = 0f..100f,
                                     colors = SliderDefaults.colors(
                                         thumbColor = CyanGlow,
                                         activeTrackColor = CyanGlow,
@@ -4183,8 +4193,276 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                 7 -> {
                     AdminRecordsScreen(viewModel)
                 }
+                8 -> {
+                    AdminCasinoGamesScreen(viewModel)
+                }
             }
         }
+    }
+}
+
+@Composable
+fun AdminCasinoGamesScreen(viewModel: MainViewModel) {
+    val casinoGames by viewModel.casinoGames.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var selectedGame by remember { mutableStateOf<com.example.data.CasinoGame?>(null) }
+    var editingName by remember { mutableStateOf("") }
+    var editingPosterUrl by remember { mutableStateOf("") }
+    var isUploading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadCasinoGames()
+    }
+
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        uri?.let {
+            val helper = uriToBase64(context, it)
+            if (helper != null) {
+                scope.launch {
+                    try {
+                        isUploading = true
+                        viewModel.showToast("Uploading poster image to Supabase...")
+                        val uploadedUrl = viewModel.uploadCasinoPoster(helper.first, "casino_${selectedGame?.id ?: System.currentTimeMillis()}.jpg", helper.second)
+                        isUploading = false
+                        if (uploadedUrl != null) {
+                            editingPosterUrl = uploadedUrl
+                            viewModel.showToast("Poster uploaded successfully!")
+                        } else {
+                            viewModel.showToast("Upload failed")
+                        }
+                    } catch (e: Exception) {
+                        isUploading = false
+                        viewModel.showToast("Error processing upload: ${e.message}")
+                    }
+                }
+            } else {
+                viewModel.showToast("Failed to process picked image.")
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Text(
+            text = "🎮 Manage Casino Posters",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            text = "Edit names and upload posters to Supabase Storage",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBg),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Select a Game to Edit",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = CyanGlow,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                casinoGames.forEach { game ->
+                    val isCurrent = selectedGame?.id == game.id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedGame = game
+                                editingName = game.name
+                                editingPosterUrl = game.posterUrl
+                            }
+                            .background(
+                                if (isCurrent) Color(0xFF2E174D) else Color.Transparent,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Game poster thumbnail preview
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.Black),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            coil.compose.SubcomposeAsyncImage(
+                                model = game.posterUrl,
+                                contentDescription = game.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                loading = {
+                                    CircularProgressIndicator(
+                                        color = PurpleGlow,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = game.name,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "ID: ${game.id} • Active: ${game.isActive}",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
+        }
+
+        if (selectedGame != null) {
+            val game = selectedGame!!
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, PurpleGlow, RoundedCornerShape(12.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Editing: ${game.name}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = editingName,
+                        onValueChange = { editingName = it },
+                        label = { Text("Game Name") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PurpleGlow,
+                            unfocusedBorderColor = BorderColor,
+                            focusedLabelColor = PurpleGlow,
+                            unfocusedLabelColor = Color.Gray,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Poster Image",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Gray
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Big poster preview
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (editingPosterUrl.isNotBlank()) {
+                            coil.compose.SubcomposeAsyncImage(
+                                model = editingPosterUrl,
+                                contentDescription = "New Poster Preview",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                loading = {
+                                    CircularProgressIndicator(color = PurpleGlow)
+                                }
+                            )
+                        } else {
+                            Text("No Poster Selected", color = Color.Gray)
+                        }
+
+                        if (isUploading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(color = CyanGlow)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Uploading to Supabase...", color = Color.White, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = { launcher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                            enabled = !isUploading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Upload, contentDescription = "Upload")
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Upload Poster", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.adminUpdateCasinoGame(
+                                    id = game.id,
+                                    name = editingName,
+                                    posterUrl = editingPosterUrl,
+                                    isActive = true
+                                )
+                                selectedGame = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PurpleGlow),
+                            enabled = !isUploading && editingName.isNotBlank(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = "Save")
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 

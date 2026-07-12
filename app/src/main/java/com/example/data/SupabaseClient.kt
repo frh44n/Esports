@@ -700,6 +700,102 @@ object SupabaseClient {
         }
     }
 
+    fun fetchCasinoGames(): List<CasinoGame> {
+        val url = "${getServerUrl()}/api/casino/games"
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    val gamesArray = jsonObj.optJSONArray("games")
+                    val gamesList = mutableListOf<CasinoGame>()
+                    if (gamesArray != null) {
+                        for (i in 0 until gamesArray.length()) {
+                            val gObj = gamesArray.getJSONObject(i)
+                            gamesList.add(
+                                CasinoGame(
+                                    id = gObj.optInt("id"),
+                                    name = gObj.optString("name"),
+                                    posterUrl = gObj.optString("poster_url"),
+                                    isActive = gObj.optBoolean("is_active", true)
+                                )
+                            )
+                        }
+                    }
+                    gamesList
+                } else {
+                    emptyList()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchCasinoGames error", e)
+            emptyList()
+        }
+    }
+
+    fun updateCasinoGame(
+        id: Int? = null,
+        name: String,
+        posterUrl: String? = null,
+        isActive: Boolean? = null
+    ): Boolean {
+        val url = "${getServerUrl()}/api/casino/games"
+        val bodyJson = JSONObject().apply {
+            id?.let { put("id", it) }
+            put("name", name)
+            posterUrl?.let { put("poster_url", it) }
+            isActive?.let { put("is_active", it) }
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateCasinoGame error", e)
+            false
+        }
+    }
+
+    fun uploadImage(
+        base64Data: String,
+        filename: String = "poster.jpg",
+        mimeType: String = "image/jpeg"
+    ): String? {
+        val url = "${getServerUrl()}/api/upload"
+        val bodyJson = JSONObject().apply {
+            put("image", base64Data)
+            put("filename", filename)
+            put("mimeType", mimeType)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    if (jsonObj.optBoolean("success")) {
+                        jsonObj.optString("url")
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "uploadImage error", e)
+            null
+        }
+    }
+
     fun fetchAdminStats(): AdminStats? {
         val url = "${getServerUrl()}/api/admin/stats"
         val request = Request.Builder().url(url).get().build()
