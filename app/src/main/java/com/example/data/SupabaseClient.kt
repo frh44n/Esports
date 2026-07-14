@@ -1213,6 +1213,36 @@ object SupabaseClient {
         )
     }
 
+    fun completeLudoTournament(whatsapp: String, tournamentId: Int, score: Int, isWinner: Boolean): Double? {
+        val url = "${getServerUrl()}/api/ludo/complete"
+        val bodyJson = JSONObject().apply {
+            put("whatsapp_number", whatsapp)
+            put("tournament_id", tournamentId)
+            put("score", score)
+            put("is_winner", isWinner)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val jsonObj = JSONObject(bodyStr)
+                    jsonObj.optDouble("prize_awarded", 0.0)
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "completeLudoTournament error", e)
+            null
+        }
+    }
+
     private fun parseError(bodyStr: String): String? {
         return try {
             val obj = JSONObject(bodyStr)

@@ -331,6 +331,10 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.uploadPhoto(base64Image, filename, mimeType)
     }
 
+    suspend fun completeLudoTournament(whatsapp: String, tournamentId: Int, score: Int, isWinner: Boolean): Double? = withContext(Dispatchers.IO) {
+        SupabaseClient.completeLudoTournament(whatsapp, tournamentId, score, isWinner)
+    }
+
     private fun prePopulateTournamentsOnline() {
         SupabaseClient.insertTournament(
             Tournament(

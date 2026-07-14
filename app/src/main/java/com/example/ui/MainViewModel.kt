@@ -982,6 +982,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ==========================================
     // MINES GAME STATE & ACTIONS
     // ==========================================
+    private val _showMinesGame = MutableStateFlow(false)
+    val showMinesGame: StateFlow<Boolean> = _showMinesGame.asStateFlow()
+
+    fun setShowMinesGame(show: Boolean) {
+        _showMinesGame.value = show
+    }
+
     private val _minesActiveGame = MutableStateFlow<com.example.data.MinesGame?>(null)
     val minesActiveGame: StateFlow<com.example.data.MinesGame?> = _minesActiveGame.asStateFlow()
 
@@ -1088,6 +1095,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetMinesSessionState() {
         _minesActiveGame.value = null
         _hasCheckedActiveMines.value = false
+    }
+
+    // ==========================================
+    // LUDO CLASSIC GAME STATE & ACTIONS
+    // ==========================================
+    private val _ludoRegistrations = MutableStateFlow<List<com.example.data.Registration>>(emptyList())
+    val ludoRegistrations: StateFlow<List<com.example.data.Registration>> = _ludoRegistrations.asStateFlow()
+
+    fun fetchLudoRegistrations(tournamentId: Int) {
+        viewModelScope.launch {
+            try {
+                val regs = repository.getTournamentRegistrations(tournamentId)
+                _ludoRegistrations.value = regs
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error fetching ludo registrations", e)
+            }
+        }
+    }
+
+    fun completeLudoGame(tournamentId: Int, score: Int, isWinner: Boolean, onComplete: (Double) -> Unit) {
+        val user = loggedInUser.value ?: return
+        viewModelScope.launch {
+            try {
+                val prizeAwarded = repository.completeLudoTournament(user.whatsappNumber, tournamentId, score, isWinner)
+                if (prizeAwarded != null) {
+                    if (prizeAwarded > 0.0) {
+                        _toastMessage.value = "🏆 Congratulations! You won ₹${"%.2f".format(prizeAwarded)}!"
+                    } else {
+                        _toastMessage.value = "Ludo match completed successfully! Score: $score"
+                    }
+                    refreshOnlineData()
+                    onComplete(prizeAwarded)
+                } else {
+                    _toastMessage.value = "Failed to synchronize game result with server."
+                    onComplete(0.0)
+                }
+            } catch (e: Exception) {
+                _toastMessage.value = "Error completing ludo game: ${e.message}"
+                onComplete(0.0)
+            }
+        }
     }
 }
 

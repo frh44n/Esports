@@ -131,6 +131,7 @@ fun AppUi(viewModel: MainViewModel) {
                 "admin" -> AdminPanelScreen(viewModel)
                 "history" -> HistoryScreen(viewModel)
                 "referral_details" -> ReferralDetailsScreen(viewModel)
+                "ludo_tournaments" -> LudoTournamentsScreen(viewModel, onBack = { viewModel.setScreen("home") })
             }
         }
     }
@@ -492,91 +493,94 @@ fun HomeScreen(viewModel: MainViewModel) {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val unreadCount = notifications.count { !it.isRead }
     var showNotificationCenter by remember { mutableStateOf(false) }
+    val showMinesGame by viewModel.showMinesGame.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // App Top Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CardBg)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "ARENA ESPORTS",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "Welcome: ${user?.whatsappNumber ?: "Loading..."}",
-                    fontSize = 12.sp,
-                    color = Color.Gray,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 180.dp)
-                )
-            }
+        if (!(showMinesGame && selectedTab == 1)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CardBg)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "ARENA ESPORTS",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Welcome: ${user?.whatsappNumber ?: "Loading..."}",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 180.dp)
+                    )
+                }
 
-            Column(horizontalAlignment = Alignment.End) {
-                // Notifications Bell Icon
-                Box(contentAlignment = Alignment.TopEnd) {
-                    IconButton(
-                        onClick = { showNotificationCenter = true },
-                        modifier = Modifier.size(36.dp).testTag("notification_bell_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Notifications",
-                            tint = if (unreadCount > 0) CyanGlow else Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                Column(horizontalAlignment = Alignment.End) {
+                    // Notifications Bell Icon
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        IconButton(
+                            onClick = { showNotificationCenter = true },
+                            modifier = Modifier.size(36.dp).testTag("notification_bell_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = "Notifications",
+                                tint = if (unreadCount > 0) CyanGlow else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        if (unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 2.dp, end = 2.dp)
+                                    .size(14.dp)
+                                    .background(Color.Red, RoundedCornerShape(7.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
-                    if (unreadCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 2.dp, end = 2.dp)
-                                .size(14.dp)
-                                .background(Color.Red, RoundedCornerShape(7.dp)),
-                            contentAlignment = Alignment.Center
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Wallet Quick View
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkBg),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.End
                         ) {
                             Text(
-                                text = unreadCount.toString(),
-                                color = Color.White,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "Bal: ₹${"%.2f".format((user?.depositBalance ?: 0.0) + (user?.withdrawalBalance ?: 0.0))}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldGlow
                             )
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Wallet Quick View
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkBg),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        Text(
-                            text = "Bal: ₹${"%.2f".format((user?.depositBalance ?: 0.0) + (user?.withdrawalBalance ?: 0.0))}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = EmeraldGlow
-                        )
-                    }
-                }
             }
+            HorizontalDivider(color = BorderColor, thickness = 1.dp)
         }
-        HorizontalDivider(color = BorderColor, thickness = 1.dp)
 
         Box(
             modifier = Modifier
@@ -1588,14 +1592,14 @@ fun TournamentItemTile(
 
 @Composable
 fun CasinoSection(viewModel: MainViewModel) {
-    var showMinesGame by remember { mutableStateOf(false) }
+    val showMinesGame by viewModel.showMinesGame.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.loadCasinoGames()
     }
 
     if (showMinesGame) {
-        MinesGameScreen(viewModel = viewModel, onBack = { showMinesGame = false })
+        MinesGameScreen(viewModel = viewModel, onBack = { viewModel.setShowMinesGame(false) })
         return
     }
 
@@ -1655,14 +1659,10 @@ fun CasinoSection(viewModel: MainViewModel) {
                 CasinoGameCard(
                     gameName = ludoName,
                     posterUrl = ludoPoster,
-                    subtext = if (game1 != null) "Prize Pool: ₹${game1.prizePool} • Entry: ₹${game1.entryFee}" else "Instant multiplayer board game with massive payouts!",
-                    isPlayable = game1 != null,
+                    subtext = "Play 1v1 & 2v2 tournaments, score points in real-time, and win prizes!",
+                    isPlayable = true,
                     onClick = {
-                        if (game1 != null) {
-                            selectedCasinoTour = game1
-                        } else {
-                            viewModel.showToast("Upcoming: $ludoName game will be live shortly!")
-                        }
+                        viewModel.setScreen("ludo_tournaments")
                     }
                 )
             }
@@ -1675,7 +1675,7 @@ fun CasinoSection(viewModel: MainViewModel) {
                     subtext = if (game2 != null) "Prize Pool: ₹${game2.prizePool} • Entry: ₹${game2.entryFee}" else "Predict safe spots, avoid explosives, multiply your stakes!",
                     isPlayable = true, // Force playable as we have integrated the live game!
                     onClick = {
-                        showMinesGame = true
+                        viewModel.setShowMinesGame(true)
                     }
                 )
             }

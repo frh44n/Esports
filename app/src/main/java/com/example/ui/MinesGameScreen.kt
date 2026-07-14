@@ -227,6 +227,71 @@ fun MinesGameScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Primary Play/Cashout Button
+                    if (activeGame != null && activeGame!!.status == "ACTIVE") {
+                        // Cashout Button
+                        val winAmount = activeGame!!.betAmount * activeGame!!.multiplier
+                        Button(
+                            onClick = {
+                                viewModel.cashoutMinesGame {
+                                    MinesSoundPlayer.playCashoutSound()
+                                }
+                            },
+                            enabled = !loading,
+                            colors = ButtonDefaults.buttonColors(containerColor = AmberGlow),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                "Cashout  ₹${String.format("%.2f", winAmount)} (${String.format("%.2f", activeGame!!.multiplier)}x)",
+                                color = DarkBg,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    } else if (activeGame != null && (activeGame!!.status == "WON" || activeGame!!.status == "LOST")) {
+                        // Reset session to start over
+                        Button(
+                            onClick = { viewModel.resetMinesSessionState() },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Play Again", color = DarkBg, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        // Bet Button
+                        Button(
+                            onClick = {
+                                val bet = betAmountStr.toDoubleOrNull() ?: 0.0
+                                if (bet <= 0) {
+                                    viewModel.showToast("Enter a valid bet amount")
+                                    return@Button
+                                }
+                                viewModel.startMinesGame(bet, minesCount)
+                            },
+                            enabled = !loading,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                if (loading) "Loading..." else "Bet",
+                                color = DarkBg,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     // Bet Amount input
                     Column {
                         Text("Bet Amount (₹)", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -306,6 +371,7 @@ fun MinesGameScreen(
                                 Text("Mines Count: $minesCount", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 Text("Gems Count: ${25 - minesCount}", color = Color.Gray, fontSize = 11.sp)
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
                             Slider(
                                 value = minesCount.toFloat(),
                                 onValueChange = { minesCount = it.toInt() },
@@ -326,71 +392,6 @@ fun MinesGameScreen(
                         ) {
                             Text("Active Mines: ${activeGame!!.minesCount}", color = Color.Gray, fontSize = 11.sp)
                             Text("Remaining Gems: ${25 - activeGame!!.minesCount - activeGame!!.revealed.size}", color = Color.Gray, fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Primary Play/Cashout Button
-                    if (activeGame != null && activeGame!!.status == "ACTIVE") {
-                        // Cashout Button
-                        val winAmount = activeGame!!.betAmount * activeGame!!.multiplier
-                        Button(
-                            onClick = {
-                                viewModel.cashoutMinesGame {
-                                    MinesSoundPlayer.playCashoutSound()
-                                }
-                            },
-                            enabled = !loading,
-                            colors = ButtonDefaults.buttonColors(containerColor = AmberGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                "Cashout  ₹${String.format("%.2f", winAmount)} (${String.format("%.2f", activeGame!!.multiplier)}x)",
-                                color = DarkBg,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-                    } else if (activeGame != null && (activeGame!!.status == "WON" || activeGame!!.status == "LOST")) {
-                        // Reset session to start over
-                        Button(
-                            onClick = { viewModel.resetMinesSessionState() },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Play Again", color = DarkBg, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        // Bet Button
-                        Button(
-                            onClick = {
-                                val bet = betAmountStr.toDoubleOrNull() ?: 0.0
-                                if (bet <= 0) {
-                                    viewModel.showToast("Enter a valid bet amount")
-                                    return@Button
-                                }
-                                viewModel.startMinesGame(bet, minesCount)
-                            },
-                            enabled = !loading,
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                if (loading) "Loading..." else "Bet",
-                                color = DarkBg,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
                         }
                     }
                 }

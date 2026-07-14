@@ -2283,6 +2283,90 @@ app.post('/api/mines/cashout', async (req, res) => {
 });
 
 
+// ==========================================
+// LUDO CLASSIC GAME ENDPOINTS
+// ==========================================
+
+// Automatically award prize to Ludo winner
+app.post('/api/ludo/complete', async (req, res) => {
+  try {
+    const { whatsapp_number, tournament_id, score, is_winner } = req.body;
+    if (!whatsapp_number || !tournament_id) {
+      return res.status(400).json({ error: "whatsapp_number and tournament_id are required" });
+    }
+
+    // 1. Fetch tournament to check prize
+    const { data: tournament, error: tourneyError } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('id', tournament_id)
+      .single();
+
+    if (tourneyError || !tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    // If winner, reward is prize_1st, else prize_2nd or 0
+    const prize = is_winner ? (tournament.prize_1st || tournament.prize_pool || 0.0) : 0.0;
+
+    // 2. Fetch profile
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('whatsapp_number', whatsapp_number)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+
+    if (prize > 0) {
+      const newWithdrawalBalance = (user.withdrawal_balance || 0.0) + prize;
+      const { error: balanceError } = await supabase
+        .from('profiles')
+        .update({ withdrawal_balance: newWithdrawalBalance })
+        .eq('id', user.id);
+
+      if (balanceError) throw balanceError;
+
+      // Log transaction
+      await supabase
+        .from('transactions')
+        .insert([
+          {
+            whatsapp_number: whatsapp_number,
+            type: 'PRIZE_WON',
+            amount: prize,
+            upi_id: 'LUDO_REWARD',
+            reference_number: `LUDO-${tournament_id}`,
+            status: 'APPROVED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
+
+    // Record game history
+    const finalGameName = `Ludo Tournament|tourId:${tournament_id}|score:${score}|winner:${is_winner ? 'YES' : 'NO'}`;
+    await supabase
+      .from('game_histories')
+      .insert([
+        {
+          whatsapp_number: whatsapp_number,
+          game_name: finalGameName,
+          prize_won: prize > 0 ? prize : null,
+          status: 'COMPLETED',
+          timestamp: Date.now()
+        }
+      ]);
+
+    res.json({ success: true, prize_awarded: prize, is_winner });
+  } catch (error) {
+    console.error("Error in ludo complete:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`=================================================`);
