@@ -1,0 +1,1 @@
+sed -i 's/fun showToast(message: String) { _toastMessage.value = message }/fun showToast(message: String) { _toastMessage.value = message }\n    fun clearToast() { _toastMessage.value = null }/' app/src/main/java/com/example/ui/MainViewModel.kt

@@ -2374,3 +2374,68 @@ app.listen(PORT, () => {
   console.log(`URL: http://localhost:${PORT}`);
   console.log(`=================================================`);
 });
+
+// --- Ludo Matchmaking (In-Memory) ---
+const ludoMatchmaking = {};
+
+app.post('/api/ludo/request-match', (req, res) => {
+  const { whatsapp, userName, tournamentId } = req.body;
+  ludoMatchmaking[whatsapp] = {
+    whatsapp,
+    userName,
+    tournamentId,
+    timestamp: Date.now(),
+    status: 'WAITING',
+    opponentName: null
+  };
+  res.json({ success: true });
+});
+
+app.post('/api/ludo/cancel-match', (req, res) => {
+  const { whatsapp } = req.body;
+  delete ludoMatchmaking[whatsapp];
+  res.json({ success: true });
+});
+
+app.get('/api/ludo/match-status', (req, res) => {
+  const { whatsapp } = req.query;
+  const match = ludoMatchmaking[whatsapp];
+  if (!match) {
+    return res.json({ status: 'NOT_FOUND' });
+  }
+  
+  // Clean up old matches (> 25s)
+  if (Date.now() - match.timestamp > 25000 && match.status === 'WAITING') {
+    delete ludoMatchmaking[whatsapp];
+    return res.json({ status: 'TIMEOUT' });
+  }
+  
+  res.json(match);
+});
+
+// Admin endpoints
+app.get('/api/admin/ludo/requests', (req, res) => {
+  // return all waiting
+  const now = Date.now();
+  const requests = Object.values(ludoMatchmaking)
+    .filter(m => m.status === 'WAITING' && now - m.timestamp < 25000)
+    .map(m => ({
+      userId: m.whatsapp,
+      userName: m.userName,
+      tournamentId: m.tournamentId,
+      timestamp: m.timestamp
+    }));
+  res.json(requests);
+});
+
+app.post('/api/admin/ludo/accept', (req, res) => {
+  const { whatsapp, opponentName } = req.body;
+  const match = ludoMatchmaking[whatsapp];
+  if (match) {
+    match.status = 'MATCHED';
+    match.opponentName = opponentName;
+    res.json({ success: true });
+  } else {
+    res.json({ success: false, error: 'Match request not found or expired' });
+  }
+});

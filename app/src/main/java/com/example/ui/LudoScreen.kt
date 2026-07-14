@@ -200,6 +200,11 @@ fun LudoTournamentsScreen(
     var selectedTournamentForReg by remember { mutableStateOf<Tournament?>(null) }
     var selectedTournamentForInfo by remember { mutableStateOf<Tournament?>(null) }
 
+    var matchingTournament by remember { mutableStateOf<Tournament?>(null) }
+    var matchingTimer by remember { mutableStateOf(10) }
+    var activeOpponentName by remember { mutableStateOf("Opponent") }
+    
+
     // Filter only Ludo tournaments
     val ludoTours = remember(tournaments) {
         tournaments.filter {
@@ -212,10 +217,27 @@ fun LudoTournamentsScreen(
         viewModel.refreshOnlineData()
     }
 
+    if (matchingTournament != null) {
+        LudoMatchmakingScreen(
+            viewModel = viewModel,
+            tournament = matchingTournament!!,
+            onMatchFound = { opponentName ->
+                activeOpponentName = opponentName
+                selectedTournamentForPlay = matchingTournament
+                matchingTournament = null
+            },
+            onCancel = {
+                matchingTournament = null
+            }
+        )
+        return
+    }
+
     if (selectedTournamentForPlay != null) {
         LudoGameManager(
             viewModel = viewModel,
             tournament = selectedTournamentForPlay!!,
+            opponentName = activeOpponentName,
             onBack = { selectedTournamentForPlay = null }
         )
         return
@@ -334,7 +356,17 @@ fun LudoTournamentsScreen(
                             userPhone = user?.whatsappNumber ?: "",
                             isAdmin = user?.isAdmin == true,
                             onRegister = { selectedTournamentForReg = tour },
-                            onPlay = { selectedTournamentForPlay = tour },
+                            onPlay = { 
+                                if (tour.isJoined) {
+                                    matchingTournament = tour
+                                } else {
+                                    viewModel.registerTournamentWithTeam(tour.id, "", "") { success ->
+                                        if (success) {
+                                            matchingTournament = tour
+                                        }
+                                    }
+                                }
+                            },
                             onInfo = { selectedTournamentForInfo = tour },
                             onStartTour = { viewModel.adminStartTournament(tour.id) },
                             onFinishTour = { viewModel.adminFinishTournament(tour.id) }
@@ -344,6 +376,8 @@ fun LudoTournamentsScreen(
             }
         }
     }
+
+    // --- Matching Dialog ---
 
     // --- Dynamic Registration Dialog ---
     if (selectedTournamentForReg != null) {
@@ -558,7 +592,8 @@ fun LudoTournamentCard(
     val isDuo = tournament.rules.lowercase().contains("2v2") || tournament.title.lowercase().contains("2v2")
     val maxSlots = if (isDuo) 8 else 16 // 8 teams or 16 players
     // Fetch simulated/real registrations
-    val regCount = if (tournament.isJoined) 3 else 2 // mock a realistic progress
+    val minJoined = if (isDuo) 1 else 1 // Always at least 1 player joined
+    val regCount = if (tournament.isJoined) minJoined + 1 else minJoined
     val spotsLeft = maxSlots - regCount
     val progress = regCount.toFloat() / maxSlots.toFloat()
 
@@ -572,8 +607,25 @@ fun LudoTournamentCard(
             .fillMaxWidth()
             .border(1.dp, if (tournament.isJoined) PurpleGlow else BorderColor, RoundedCornerShape(14.dp))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header Info
+        Column {
+            if (tournament.posterRes.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp)
+                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                ) {
+                    coil.compose.AsyncImage(
+                        model = tournament.posterRes,
+                        contentDescription = "Tournament Poster",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Header Info
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -666,7 +718,7 @@ fun LudoTournamentCard(
                     Text("Details", fontSize = 12.sp)
                 }
 
-                // Action Button (Join / Play)
+                // Action Button (Play)
                 if (isFinished) {
                     Button(
                         onClick = {},
@@ -676,21 +728,13 @@ fun LudoTournamentCard(
                     ) {
                         Text("Ended", fontSize = 12.sp, color = Color.Gray)
                     }
-                } else if (tournament.isJoined) {
+                } else {
                     Button(
                         onClick = onPlay,
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
                         modifier = Modifier.weight(1.5f)
                     ) {
-                        Text("PLAY NOW", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                } else {
-                    Button(
-                        onClick = onRegister,
-                        colors = ButtonDefaults.buttonColors(containerColor = PurpleGlow),
-                        modifier = Modifier.weight(1.5f)
-                    ) {
-                        Text("JOIN FOR ₹${tournament.entryFee}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(if (tournament.isJoined) "PLAY NOW" else "PLAY (₹${tournament.entryFee})", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
@@ -725,32 +769,25 @@ fun LudoTournamentCard(
         }
     }
 }
+}
 
 @Composable
 fun LudoGameManager(
     viewModel: MainViewModel,
     tournament: Tournament,
+    opponentName: String = "Opponent",
     onBack: () -> Unit
 ) {
-    var gameState by remember { mutableStateOf("lobby") } // "lobby", "playing", "finished"
+    var gameState by remember { mutableStateOf("playing") } // "playing", "finished"
     var finalScore by remember { mutableIntStateOf(0) }
     var userWonMatch by remember { mutableStateOf(false) }
 
     when (gameState) {
-        "lobby" -> {
-            LudoLobbyScreen(
-                viewModel = viewModel,
-                tournament = tournament,
-                onBack = onBack,
-                onStartGame = {
-                    gameState = "playing"
-                }
-            )
-        }
         "playing" -> {
             LudoGamePlayScreen(
                 viewModel = viewModel,
                 tournament = tournament,
+                opponentName = opponentName,
                 onGameFinished = { score, isWinner ->
                     finalScore = score
                     userWonMatch = isWinner
@@ -771,101 +808,15 @@ fun LudoGameManager(
 }
 
 @Composable
-fun LudoLobbyScreen(
-    viewModel: MainViewModel,
-    tournament: Tournament,
-    onBack: () -> Unit,
-    onStartGame: () -> Unit
-) {
-    var countdownSeconds by remember { mutableIntStateOf(10) }
-    val isLive = tournament.startTime.contains("[STARTED]")
-
-    // Check online update to automatically start
-    LaunchedEffect(Unit) {
-        while (countdownSeconds > 0 && !isLive) {
-            delay(1000)
-            countdownSeconds--
-        }
-        // Once countdown finishes or admin starts
-        onStartGame()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBg)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(100.dp)
-                .background(PurpleGlow.copy(alpha = 0.1f), CircleShape)
-                .border(2.dp, PurpleGlow, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "$countdownSeconds",
-                fontSize = 36.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = PurpleGlow
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "PREPARING REAL-TIME ARENA",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Connecting you to Ludo Classic Tournament ID #${tournament.id} matchmaking room...",
-            fontSize = 13.sp,
-            color = Color.Gray,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = RedGlow.copy(alpha = 0.15f)),
-            border = BorderStroke(1.dp, RedGlow),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = "Warning", tint = RedGlow)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("IMPORTANT WARNING", fontWeight = FontWeight.Bold, color = RedGlow, fontSize = 14.sp)
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "DO NOT CLICK BACK OR REFRESH THE PAGE! Leaving the countdown lobby now will automatically trigger a self-forfeit and disqualify you from this Ludo tournament match.",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(40.dp))
-        CircularProgressIndicator(color = PurpleGlow)
-    }
-}
-
-@Composable
 fun LudoGamePlayScreen(
     viewModel: MainViewModel,
     tournament: Tournament,
+    opponentName: String = "Opponent",
     onGameFinished: (Int, Boolean) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var matchSecondsLeft by remember { mutableIntStateOf(900) } // 15 minutes limit
+
 
     // Real-time points state
     var p1Points by remember { mutableIntStateOf(0) }
@@ -898,6 +849,10 @@ fun LudoGamePlayScreen(
     val playablePawns = remember { mutableStateListOf<Int>() }
 
     // Action banner
+    var p1Lives by remember { mutableIntStateOf(3) }
+    var p2Lives by remember { mutableIntStateOf(3) }
+    var turnSecondsLeft by remember { mutableIntStateOf(8) }
+
     var actionBannerText by remember { mutableStateOf("ROLL DICE TO START!") }
 
     // Timer countdown
@@ -933,9 +888,9 @@ fun LudoGamePlayScreen(
     fun checkCaptures(movedPawn: LudoPawn) {
         val targetCoord = if (movedPawn.position in 0..50) {
             val idx = if (movedPawn.player == 1) {
-                (38 + movedPawn.position) % 52
+                (39 + movedPawn.position) % 52
             } else {
-                (12 + movedPawn.position) % 52
+                (13 + movedPawn.position) % 52
             }
             TrackCoordinates[idx]
         } else null
@@ -943,7 +898,8 @@ fun LudoGamePlayScreen(
         if (targetCoord != null) {
             // Safe zone check (stars)
             val isSafeStar = listOf(
-                Pair(1, 6), Pair(8, 2), Pair(13, 8), Pair(6, 12)
+                Pair(1, 6), Pair(8, 1), Pair(13, 8), Pair(6, 13), // Starts
+                Pair(2, 8), Pair(6, 2), Pair(12, 6), Pair(8, 12)  // Additional safe zones
             ).contains(targetCoord)
 
             if (!isSafeStar) {
@@ -952,9 +908,9 @@ fun LudoGamePlayScreen(
                 pawns.forEach { other ->
                     if (other.player != movedPawn.player && other.position in 0..50) {
                         val otherIdx = if (other.player == 1) {
-                            (38 + other.position) % 52
+                            (39 + other.position) % 52
                         } else {
-                            (12 + other.position) % 52
+                            (13 + other.position) % 52
                         }
                         val otherCoord = TrackCoordinates[otherIdx]
                         if (otherCoord == targetCoord) {
@@ -966,7 +922,7 @@ fun LudoGamePlayScreen(
                                 actionBannerText = "💥 YOU CAPTURED GREEN PAWN! +50 PTS"
                             } else {
                                 p2Points += 50
-                                actionBannerText = "💥 BOT CAPTURED YOUR BLUE PAWN!"
+                                actionBannerText = "💥 ${opponentName.uppercase()} CAPTURED YOUR BLUE PAWN!"
                             }
                         }
                     }
@@ -979,9 +935,9 @@ fun LudoGamePlayScreen(
     }
 
     // Bot AI Turn execution
-    fun executeBotTurn() {
+    fun executeOpponentTurn() {
         coroutineScope.launch {
-            actionBannerText = "GREEN BOT IS THINKING..."
+            actionBannerText = "${opponentName.uppercase()} IS THINKING..."
             delay(1200)
 
             // Roll dice animation
@@ -994,24 +950,74 @@ fun LudoGamePlayScreen(
             isRolling = false
 
             val roll = diceValue
-            actionBannerText = "BOT ROLLED A $roll!"
+            actionBannerText = "${opponentName.uppercase()} ROLLED A $roll!"
             delay(800)
 
             val moves = getPlayablePawns(2, roll)
             if (moves.isEmpty()) {
-                actionBannerText = "NO MOVES POSSIBLE FOR BOT!"
+                actionBannerText = "NO MOVES FOR ${opponentName.uppercase()}!"
                 delay(1200)
                 // Shift turn
                 currentTurn = 1
                 hasRolledThisTurn = false
                 actionBannerText = "YOUR TURN! ROLL THE DICE."
             } else {
-                // Smart choice: prioritizes capturing, then advancing closest to home
+                // High IQ Bot Logic: prioritizes capturing, escaping danger, landing on stars, and advancing
+                val safeStars = listOf(
+                    Pair(1, 6), Pair(8, 1), Pair(13, 8), Pair(6, 13), 
+                    Pair(2, 8), Pair(6, 2), Pair(12, 6), Pair(8, 12)
+                )
+                
                 val chosenId = moves.maxByOrNull { id ->
                     val pawn = pawns.first { it.id == id }
                     var priority = 0
-                    if (pawn.position == -1 && roll == 6) priority = 5
-                    if (pawn.position in 45..54) priority = 3 // nearing home
+                    
+                    if (pawn.position == -1 && roll == 6) {
+                        priority = 60 // Good to get pawns out
+                    } else {
+                        val newPos = pawn.position + roll
+                        if (newPos <= 50) {
+                            val newIdx = (13 + newPos) % 52
+                            val targetCoord = TrackCoordinates[newIdx]
+                            val isSafeStar = safeStars.contains(targetCoord)
+                            
+                            // 1. Can we capture an opponent?
+                            var canCapture = false
+                            pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
+                                val oppIdx = (39 + opp.position) % 52
+                                if (TrackCoordinates[oppIdx] == targetCoord && !isSafeStar) {
+                                    canCapture = true
+                                }
+                            }
+                            if (canCapture) priority += 100 // Top priority!
+                            
+                            // 2. Are we landing on a safe star?
+                            if (isSafeStar) priority += 40
+                            
+                            // 3. Are we escaping from a threatened position?
+                            val currentIdx = (13 + pawn.position) % 52
+                            val currentCoord = TrackCoordinates[currentIdx]
+                            val currentlySafe = safeStars.contains(currentCoord)
+                            
+                            if (!currentlySafe && pawn.position >= 0) {
+                                var isThreatened = false
+                                pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
+                                    val oppIdx = (39 + opp.position) % 52
+                                    val dist = (currentIdx - oppIdx + 52) % 52
+                                    if (dist in 1..5) isThreatened = true
+                                }
+                                if (isThreatened) priority += 50
+                            }
+                            
+                            // 4. Progress towards home
+                            priority += newPos / 2
+                            if (newPos > 44) priority += 20 // Close to home column
+                        } else if (newPos == 56) {
+                            priority += 200 // Winning move!
+                        } else {
+                            priority += 15 // Advancing inside home column
+                        }
+                    }
                     priority
                 } ?: moves.random()
 
@@ -1019,11 +1025,11 @@ fun LudoGamePlayScreen(
                 if (pawn.position == -1) {
                     pawn.position = 0
                     p2Points += 1
-                    actionBannerText = "BOT MOVED GREEN PAWN OUT OF YARD!"
+                    actionBannerText = "${opponentName.uppercase()} MOVED GREEN PAWN OUT!"
                     LudoSoundEffects.playMove()
                     delay(250)
                 } else {
-                    actionBannerText = "BOT IS MOVING GREEN PAWN..."
+                    actionBannerText = "${opponentName.uppercase()} IS MOVING GREEN PAWN..."
                     for (step in 1..roll) {
                         if (pawn.position + 1 <= 56) {
                             pawn.position += 1
@@ -1053,7 +1059,7 @@ fun LudoGamePlayScreen(
                 // If rolled a 6, gets another turn, else switch
                 if (roll == 6) {
                     actionBannerText = "BOT ROLLED A 6! ROLLING AGAIN..."
-                    executeBotTurn()
+                    executeOpponentTurn()
                 } else {
                     currentTurn = 1
                     hasRolledThisTurn = false
@@ -1115,10 +1121,30 @@ fun LudoGamePlayScreen(
             } else {
                 currentTurn = 2
                 hasRolledThisTurn = false
-                executeBotTurn()
+                executeOpponentTurn()
             }
         }
     }
+
+    LaunchedEffect(currentTurn, hasRolledThisTurn) {
+        turnSecondsLeft = 8
+        while (turnSecondsLeft > 0) {
+            delay(1000)
+            turnSecondsLeft--
+        }
+        if (currentTurn == 1) {
+            p1Lives--
+            if (p1Lives <= 0) {
+                onGameFinished(p1Points, false)
+            } else {
+                currentTurn = 2
+                hasRolledThisTurn = false
+                playablePawns.clear()
+                executeOpponentTurn()
+            }
+        }
+    }
+
 
     // Roll dice click
     fun onUserRollClicked() {
@@ -1142,7 +1168,7 @@ fun LudoGamePlayScreen(
                 delay(1200)
                 currentTurn = 2
                 hasRolledThisTurn = false
-                executeBotTurn()
+                executeOpponentTurn()
             } else {
                 actionBannerText = "ROLLED A $roll! CHOOSE BLUE PAWN TO MOVE."
                 playablePawns.addAll(moves)
@@ -1179,13 +1205,52 @@ fun LudoGamePlayScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val transition = rememberInfiniteTransition(label = "")
+                    val alphaGlow by transition.animateFloat(
+                        initialValue = 0.2f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(800, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ), label = ""
+                    )
+
+                    val p1Glow = if (currentTurn == 1) Modifier.border(2.dp, LudoBlue.copy(alpha = alphaGlow), RoundedCornerShape(4.dp)).padding(4.dp) else Modifier.padding(4.dp)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = p1Glow) {
                         Text("YOU (BLUE)", color = LudoBlue, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         Text("$p1Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        Row {
+                            repeat(3) { i ->
+                                Icon(
+                                    imageVector = if (i < p1Lives) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Life",
+                                    tint = RedGlow,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                        if (currentTurn == 1) {
+                            Text("00:0${turnSecondsLeft}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("BOT (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+
+                    val p2Glow = if (currentTurn == 2) Modifier.border(2.dp, LudoGreen.copy(alpha = alphaGlow), RoundedCornerShape(4.dp)).padding(4.dp) else Modifier.padding(4.dp)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = p2Glow) {
+                        Text("OPPONENT (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         Text("$p2Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        Row {
+                            repeat(3) { i ->
+                                Icon(
+                                    imageVector = if (i < p2Lives) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Life",
+                                    tint = RedGlow,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                        if (currentTurn == 2) {
+                            Text("00:0${turnSecondsLeft}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -1300,14 +1365,26 @@ fun LudoGamePlayScreen(
 
                 // Draw safe zones stars
                 val starPositions = listOf(
-                    Pair(1, 6), Pair(8, 2), Pair(13, 8), Pair(6, 12)
+                    Pair(1, 6), Pair(8, 1), Pair(13, 8), Pair(6, 13), // Starts
+                    Pair(2, 8), Pair(6, 2), Pair(12, 6), Pair(8, 12)  // Additional safe zones
                 )
                 starPositions.forEach { star ->
-                    drawCircle(
-                        color = Color.Yellow,
-                        radius = cellSize * 0.3f,
-                        center = Offset((star.first + 0.5f) * cellSize, (star.second + 0.5f) * cellSize)
-                    )
+                    // Draw star shape instead of simple circle
+                    val cx = (star.first + 0.5f) * cellSize
+                    val cy = (star.second + 0.5f) * cellSize
+                    val r = cellSize * 0.3f
+                    val starPath = Path().apply {
+                        val points = 5
+                        val angle = Math.PI / points
+                        for (i in 0 until points * 2) {
+                            val radius = if (i % 2 == 0) r else r / 2
+                            val x = cx + (radius * kotlin.math.cos(i * angle - Math.PI / 2)).toFloat()
+                            val y = cy + (radius * kotlin.math.sin(i * angle - Math.PI / 2)).toFloat()
+                            if (i == 0) moveTo(x, y) else lineTo(x, y)
+                        }
+                        close()
+                    }
+                    drawPath(path = starPath, color = Color.Yellow)
                 }
 
                 // 5. Draw center home triangle quadrants meeting at the center (row 6..8, col 6..8)
@@ -1371,9 +1448,9 @@ fun LudoGamePlayScreen(
                     pawn.position in 0..50 -> {
                         // Track coordinates
                         val trackIndex = if (pawn.player == 1) {
-                            (38 + pawn.position) % 52
+                            (39 + pawn.position) % 52
                         } else {
-                            (12 + pawn.position) % 52
+                            (13 + pawn.position) % 52
                         }
                         val coord = TrackCoordinates[trackIndex]
                         Pair(coord.first + 0.5f, coord.second + 0.5f)
@@ -1413,7 +1490,9 @@ fun LudoGamePlayScreen(
                         val yOffset = row * cellPx - cellPx / 2
 
                         // Breathe scale animation for playable pawns
-                        val scale by animateFloatAsState(
+                        val infiniteTransition = rememberInfiniteTransition(label = "")
+                        val scale by infiniteTransition.animateFloat(
+                            initialValue = 1f,
                             targetValue = if (isPawnPlayable) 1.25f else 1f,
                             animationSpec = infiniteRepeatable(
                                 animation = tween(600, easing = LinearEasing),

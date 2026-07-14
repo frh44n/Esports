@@ -1,0 +1,49 @@
+Reusing configuration cache.
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:processDebugGoogleServices UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:kspDebugKotlin UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+
+> Task :app:compileDebugKotlin FAILED
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:492:23 Property delegate must have a 'getValue(Nothing?, KProperty0<ERROR CLASS: Cannot infer argument for type parameter T>)' method. None of the following functions is applicable:
+fun <T> State<T>.getValue(thisObj: Any?, property: KProperty<*>): T
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:492:26 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:492:36 Unresolved reference 'inAppNotifications'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:492:55 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:494:46 Unresolved reference 'it'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:537:56 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:541:41 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:672:23 Property delegate must have a 'getValue(Nothing?, KProperty0<ERROR CLASS: Cannot infer argument for type parameter T>)' method. None of the following functions is applicable:
+fun <T> State<T>.getValue(thisObj: Any?, property: KProperty<*>): T
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:672:26 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:672:36 Unresolved reference 'inAppNotifications'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:672:55 Cannot infer type for this parameter. Specify it explicitly.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:751:61 Unresolved reference 'title'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:754:66 Unresolved reference 'title'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:758:145 Unresolved reference 'timestamp'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:770:57 Unresolved reference 'content'.
+e: file:///app/applet/app/src/main/java/com/example/ui/AppUi.kt:778:120 Unresolved reference 'content'.
+e: file:///app/applet/app/src/main/java/com/example/ui/MainViewModel.kt:186:1 Syntax error: Expecting a top level declaration.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 4s
+9 actionable tasks: 1 executed, 8 up-to-date
+Configuration cache entry reused.

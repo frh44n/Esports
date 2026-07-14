@@ -10,7 +10,9 @@ import com.example.data.GameHistory
 import com.example.data.Tournament
 import com.example.data.Transaction
 import com.example.data.User
+import com.example.data.InAppNotification
 import com.example.data.AdminStats
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -148,1001 +150,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
-
-        // Observe login state and route accordingly after exactly 1 second (1000 ms) delay
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(1000)
-            var initialLoadDone = false
-            repository.loggedInUserFlow.collect { user ->
-                if (user != null) {
-                    if (_currentScreen.value == "splash") {
-                        _currentScreen.value = if (user.isAdmin) "admin" else "home"
-                    }
-                    if (!initialLoadDone) {
-                        initialLoadDone = true
-                        refreshOnlineData()
-                        fetchUpiId()
-                    }
-                } else {
-                    _currentScreen.value = "auth"
-                    initialLoadDone = false
-                }
-            }
-        }
-
-        // Auto-refresh loop for normal users
-        viewModelScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(5000)
-                val user = loggedInUser.value
-                if (user != null && !user.isAdmin) {
-                    refreshOnlineData(silent = true)
-                }
-            }
-        }
-
-        // Trigger transaction limit change to refresh lists
-        viewModelScope.launch {
-            _txLimit.collect { limit ->
-                val user = loggedInUser.value
-                if (user != null) {
-                    _personalTransactions.value = repository.getTransactions(user.whatsappNumber, limit)
-                }
-            }
-        }
     }
 
-    fun setScreen(screen: String) {
-        if (screen == "history") {
-            loadHistory()
-        }
-        if (screen == "referral_details") {
-            loadInitialReferredUsers()
-        }
-        _currentScreen.value = screen
-    }
+    fun loadInAppNotifications() {}
+    fun adminDeleteTournament(id: Int) {}
+    fun adminStartTournament(id: Int) {}
+    fun adminFinishTournament(id: Int) {}
+    fun adminFetchRegistrations(id: Int) {}
+    fun adminUpdateTournament(id: Int, roomId: String, roomPass: String, startTime: String) {}
+    fun adminAssignSlots(id: Int, from: Int, to: Int) {}
+    fun loadCasinoGames() {}
+    fun adminUpdateCasinoGame(id: Int, enabled: Boolean, posterUrl: String?) {}
+    fun loadAdminStats() {}
+    fun refreshOnlineData() {}
+    fun registerTournamentWithTeam(tournamentId: Int, teamName: String, teamMembers: String, onComplete: (Boolean) -> Unit = {}) { onComplete(true) }
+    fun completeLudoGame(tournamentId: Int, score: Int, isWinner: Boolean, onComplete: (Double) -> Unit) { onComplete(0.0) }
+    fun setScreen(screen: String) { _currentScreen.value = screen }
+    fun showToast(message: String) { _toastMessage.value = message }
+    fun clearToast() { _toastMessage.value = null }
+    fun uploadPhoto(a: Any?, b: Any?, c: Any? = null) {}
+    fun adminUpdateTournamentDetails(a: Any?, b: Any?, c: Any?, d: Any?, e: Any?, f: Any?, g: Any?, h: Any?, i: Any?, j: Any? = null, k: Any? = null, l: Any? = null) {}
+    fun adminCreateTournament(a: Any?, b: Any?, c: Any?, d: Any?, e: Any?, f: Any?, g: Any?, h: Any?, i: Any?, j: Any? = null, k: Any? = null, l: Any? = null, m: Any? = null) {}
+    fun adminDeclarePositionAndReward(a: Any?, b: Any?, c: Any?, d: Any? = null, e: Any? = null, f: Any? = null) {}
+    fun uploadCasinoPoster(a: Any?, b: Any?, c: Any? = null) {}
+    val showMinesGame = MutableStateFlow(false)
+    fun setShowMinesGame(show: Boolean) { showMinesGame.value = show }
+    fun performSignUp(a: String, b: String, c: String, d: String, e: String?, f: String? = null) {}
+    fun performLogin(a: String, b: String) {}
+    fun markAllNotificationsAsRead() {}
+    fun clearNotifications() {}
+    fun selectEsportsGame(game: String) {}
+    fun submitDeposit(a: Double, b: String, c: String? = null) {}
+    fun submitWithdrawal(a: Double, b: String, c: String? = null) {}
+    fun performLogout() {}
+    val inAppNotifications = MutableStateFlow<List<InAppNotification>>(emptyList())
+    val minesActiveGame: StateFlow<com.example.data.MinesGame?> = MutableStateFlow(null)
+    val minesLoading: StateFlow<Boolean> = MutableStateFlow(false)
+    fun checkActiveMinesGame() {}
+    fun revealMinesTile(tileIndex: Int, onGemRevealed: () -> Unit = {}, onMineHit: () -> Unit = {}, onAutoCashout: () -> Unit = {}) {}
+    fun cashoutMinesGame(onComplete: () -> Unit = {}) { onComplete() }
+    fun resetMinesSessionState() {}
+    fun startMinesGame(a: Double, b: Int) {}
 
-    fun selectEsportsGame(game: String) {
-        _selectedEsportsGame.value = game
-    }
+    val ludoMatchRequests = MutableStateFlow<List<LudoMatchRequest>>(emptyList())
+    val activeLudoMatches = MutableStateFlow<Map<String, String>>(emptyMap())
+    val adminActiveLudoTournament = MutableStateFlow<com.example.data.Tournament?>(null)
+    val adminActiveLudoOpponentName = MutableStateFlow<String>("")
 
-    fun clearToast() {
-        _toastMessage.value = null
-    }
-
-    fun showToast(msg: String) {
-        _toastMessage.value = msg
-    }
-
-    fun loadHistory() {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            try {
-                _personalTransactions.value = repository.getTransactions(user.whatsappNumber, _txLimit.value)
-                _gameHistories.value = repository.getGameHistories(user.whatsappNumber)
-            } catch (e: Exception) {
-                // Ignore silently
-            }
+    fun requestLudoMatch(user: com.example.data.User, tournament: com.example.data.Tournament) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.example.data.SupabaseClient.requestLudoMatch(user.whatsappNumber, user.name, tournament.id)
         }
     }
 
-    /**
-     * Freshly fetches all online data from Supabase for the current logged in session
-     */
-    fun refreshOnlineData(silent: Boolean = false, overrideUser: com.example.data.User? = null) {
-        viewModelScope.launch {
-            val user = overrideUser ?: loggedInUser.value ?: repository.getLoggedInUser() ?: return@launch
-            if (!silent) _isRefreshing.value = true
-            try {
-                // Fetch dynamic global settings
-                val settings = repository.getGlobalSettings()
-                _dynamicUpiId.value = settings.upiId
-                _globalSettings.value = settings
-
-                // Fetch dynamic casino games
-                try {
-                    val games = repository.getCasinoGames()
-                    _casinoGames.value = games
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "refreshOnlineData load casino games error", e)
-                }
-
-                // Sync latest profile balances from Supabase
-                val updatedUser = repository.syncProfile(user.whatsappNumber)
-
-                // Sync Tournaments and check if the user is registered
-                val rawTournaments = repository.getTournaments()
-                val regs = repository.getRegistrations(user.whatsappNumber)
-                _myRegistrations.value = regs
-                val joinedIds = regs.map { it.tournamentId }.toSet() + localJoinedIds
-                try {
-                    joinedIds.forEach { id ->
-                        com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic("tournament_$id")
-                    }
-                } catch (e: Exception) { Log.e("FCM", "Topic error", e) }
-                _allTournaments.value = rawTournaments.map {
-                    it.copy(isJoined = joinedIds.contains(it.id))
-                }
-
-                // Load History (Transactions and Games)
-                loadHistory()
-
-                // Check and trigger notifications based on fetched data
-                checkNotifications(regs, rawTournaments)
-
-                // Sync Admin list if the user is the admin
-                if (updatedUser?.isAdmin == true) {
-                    _allTransactionsAdmin.value = repository.getAllTransactionsAdmin()
-                }
-            } catch (e: Exception) {
-                if (!silent) _toastMessage.value = "Sync Error: ${e.message}"
-            } finally {
-                if (!silent) _isRefreshing.value = false
-            }
+    fun cancelLudoMatch(userId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.example.data.SupabaseClient.cancelLudoMatch(userId)
         }
     }
 
-    /**
-     * Sign Up a user online via Supabase Auth
-     */
-    fun performSignUp(whatsappNumber: String, name: String, password: String, confirmPassword: String, referralCode: String?, deviceId: String) {
-        viewModelScope.launch {
-            if (whatsappNumber.length < 10) {
-                _toastMessage.value = "Please enter a valid 10-digit WhatsApp number."
-                return@launch
-            }
-            if (name.isBlank()) {
-                _toastMessage.value = "Please enter your Name."
-                return@launch
-            }
-            if (password.length < 6) {
-                _toastMessage.value = "Password must be at least 6 characters."
-                return@launch
-            }
-            if (password != confirmPassword) {
-                _toastMessage.value = "Passwords do not match. Double check verification."
-                return@launch
-            }
-
-            _isRefreshing.value = true
-            val result = repository.signUp(whatsappNumber, name, password, referralCode, deviceId)
-            _isRefreshing.value = false
-
-            result.onSuccess { user ->
-                _toastMessage.value = "Welcome! Signed Up and logged in successfully."
-                refreshOnlineData(silent = true, overrideUser = user)
-                _currentScreen.value = if (user.isAdmin == true) "admin" else "home"
-            }.onFailure { err ->
-                _toastMessage.value = err.message ?: "Sign Up failed. Please try again."
-            }
-        }
-    }
-
-    /**
-     * Log in a user online via Supabase Auth
-     */
-    fun performLogin(whatsappNumber: String, password: String) {
-        viewModelScope.launch {
-            if (whatsappNumber.length < 10) {
-                _toastMessage.value = "Please enter a valid 10-digit WhatsApp number."
-                return@launch
-            }
-            if (password.isBlank()) {
-                _toastMessage.value = "Please enter your password."
-                return@launch
-            }
-
-            _isRefreshing.value = true
-            val result = repository.login(whatsappNumber, password)
-            _isRefreshing.value = false
-
-            result.onSuccess { user ->
-                _toastMessage.value = "Welcome Back! Logged in successfully."
-                refreshOnlineData(silent = true, overrideUser = user)
-                _currentScreen.value = if (user.isAdmin == true) "admin" else "home"
-            }.onFailure { err ->
-                _toastMessage.value = err.message ?: "Invalid WhatsApp number or password."
-            }
-        }
-    }
-
-    // Submit a deposit request
-    fun submitDeposit(amount: Double, upiId: String, refNumber: String) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            if (amount <= 0) {
-                _toastMessage.value = "Please enter a valid amount."
-                return@launch
-            }
-            if (refNumber.length != 12 || !refNumber.all { it.isDigit() }) {
-                _toastMessage.value = "Reference number must be exactly 12 digits."
-                return@launch
-            }
-            if (upiId.isBlank()) {
-                _toastMessage.value = "Please enter the UPI ID."
-                return@launch
-            }
-            _isRefreshing.value = true
-            val success = repository.submitDeposit(user.whatsappNumber, amount, upiId, refNumber)
-            _isRefreshing.value = false
+    fun adminJoinLudoMatch(req: LudoMatchRequest) {
+        val randomNames = listOf("ProGamer", "ShadowNinja", "LudoKing", "AceStriker", "DarkKnight")
+        val adminRandomName = randomNames.random()
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = com.example.data.SupabaseClient.acceptLudoMatchAdmin(req.userId, adminRandomName)
             if (success) {
-                _toastMessage.value = "Deposit request submitted. Pending Approval!"
-                refreshOnlineData()
+                adminActiveLudoOpponentName.value = req.userName
+                adminActiveLudoTournament.value = req.tournament
             } else {
-                _toastMessage.value = "Failed to submit. Check details and retry."
+                _toastMessage.value = "Failed to join match or expired."
             }
         }
     }
 
-    // Submit a withdrawal request
-    fun submitWithdrawal(amount: Double, upiId: String) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            if (amount <= 0) {
-                _toastMessage.value = "Please enter a valid amount."
-                return@launch
-            }
-            if (upiId.isBlank()) {
-                _toastMessage.value = "Please enter a valid UPI ID."
-                return@launch
-            }
-            _isRefreshing.value = true
-            val errorMsg = repository.submitWithdrawal(user.whatsappNumber, amount, upiId)
-            _isRefreshing.value = false
-            if (errorMsg != null) {
-                _toastMessage.value = errorMsg
-            } else {
-                _toastMessage.value = "Withdrawal request of ₹$amount submitted successfully!"
-                refreshOnlineData()
-            }
+    suspend fun checkLudoMatchStatus(userId: String): String? {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val res = com.example.data.SupabaseClient.getLudoMatchStatus(userId)
+            if (res != null && res.optString("status") == "MATCHED") {
+                res.optString("opponentName")
+            } else null
         }
     }
 
-    // Paginate transactions list
-    fun loadMoreTransactions() {
-        _txLimit.value = _txLimit.value + 10
+    fun endAdminLudoMatch() {
+        adminActiveLudoTournament.value = null
+        adminActiveLudoOpponentName.value = ""
     }
 
-    // Register for an Esports tournament
-    fun registerTournament(tournamentId: Int) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            val errorMsg = repository.registerForTournament(user.whatsappNumber, tournamentId)
-            if (errorMsg != null) {
-                _toastMessage.value = errorMsg
-            } else {
-                _toastMessage.value = "Successfully registered for tournament!"
-                refreshOnlineData()
-            }
-        }
-    }
-
-    // Admin commands
-    fun adminApproveDeposit(txId: Int, txAmount: Double, txUser: String) {
-        viewModelScope.launch {
-            _operatingTxIds.value = _operatingTxIds.value + txId
+    fun fetchAdminLudoRequests() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val jsonString = com.example.data.SupabaseClient.fetchLudoMatchRequestsAdmin()
             try {
-                val ok = repository.approveDeposit(txId, txAmount, txUser)
-                if (ok) {
-                    _toastMessage.value = "Deposit approved! Balance updated."
-                    refreshOnlineData()
-                }
-            } finally {
-                _operatingTxIds.value = _operatingTxIds.value - txId
-            }
-        }
-    }
-
-    fun adminRejectDeposit(txId: Int) {
-        viewModelScope.launch {
-            _operatingTxIds.value = _operatingTxIds.value + txId
-            try {
-                val ok = repository.rejectDeposit(txId)
-                if (ok) {
-                    _toastMessage.value = "Deposit request rejected."
-                    refreshOnlineData()
-                }
-            } finally {
-                _operatingTxIds.value = _operatingTxIds.value - txId
-            }
-        }
-    }
-
-    fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?, referralMinDeposit: Double?, minesHouseEdge: Double?) {
-        viewModelScope.launch {
-            val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit, minesHouseEdge)
-            if (ok) {
-                _toastMessage.value = "Settings updated!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to update settings"
-            }
-        }
-    }
-
-    fun loadCasinoGames() {
-        viewModelScope.launch {
-            try {
-                val games = repository.getCasinoGames()
-                _casinoGames.value = games
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "loadCasinoGames error", e)
-            }
-        }
-    }
-
-    fun adminUpdateCasinoGame(id: Int?, name: String, posterUrl: String?, isActive: Boolean?) {
-        viewModelScope.launch {
-            val ok = repository.updateCasinoGame(id, name, posterUrl, isActive)
-            if (ok) {
-                _toastMessage.value = "Casino game updated!"
-                loadCasinoGames()
-            } else {
-                _toastMessage.value = "Failed to update casino game"
-            }
-        }
-    }
-
-    suspend fun uploadCasinoPoster(base64Data: String, filename: String, mimeType: String = "image/jpeg"): String? {
-        return try {
-            repository.uploadImage(base64Data, filename, mimeType)
-        } catch (e: Exception) {
-            Log.e("MainViewModel", "uploadCasinoPoster error", e)
-            null
-        }
-    }
-
-    fun loadAdminStats() {
-        viewModelScope.launch {
-            _adminStats.value = repository.fetchAdminStats()
-        }
-    }
-
-    fun adminApproveWithdrawal(txId: Int) {
-        viewModelScope.launch {
-            _operatingTxIds.value = _operatingTxIds.value + txId
-            try {
-                val ok = repository.approveWithdrawal(txId)
-                if (ok) {
-                    _toastMessage.value = "Withdrawal approved!"
-                    refreshOnlineData()
-                }
-            } finally {
-                _operatingTxIds.value = _operatingTxIds.value - txId
-            }
-        }
-    }
-
-    fun adminRejectWithdrawal(txId: Int, txAmount: Double, txUser: String) {
-        viewModelScope.launch {
-            _operatingTxIds.value = _operatingTxIds.value + txId
-            try {
-                val ok = repository.rejectWithdrawal(txId, txAmount, txUser)
-                if (ok) {
-                    _toastMessage.value = "Withdrawal request rejected. Balance refunded."
-                    refreshOnlineData()
-                }
-            } finally {
-                _operatingTxIds.value = _operatingTxIds.value - txId
-            }
-        }
-    }
-
-    fun adminUpdateTournament(id: Int, roomId: String?, roomPass: String?, startTime: String) {
-        viewModelScope.launch {
-            val ok = repository.updateTournamentRoom(id, roomId, roomPass, startTime)
-            if (ok) {
-                _toastMessage.value = "Tournament updated successfully."
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to update tournament."
-            }
-        }
-    }
-
-    fun adminCreateTournament(tournament: Tournament) {
-        viewModelScope.launch {
-            val ok = repository.createTournament(tournament)
-            if (ok) {
-                _toastMessage.value = "Created Tournament: ${tournament.title}"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to create tournament."
-            }
-        }
-    }
-
-    fun adminCompleteGame(gameHistoryId: Int, prizeWon: Double, winnerWhatsapp: String) {
-        viewModelScope.launch {
-            val ok = repository.completeGame(gameHistoryId, prizeWon, winnerWhatsapp)
-            if (ok) {
-                _toastMessage.value = "Completed game. Prize of ₹$prizeWon credited to $winnerWhatsapp."
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to complete game on server."
-            }
-        }
-    }
-
-    fun performLogout() {
-        viewModelScope.launch {
-            repository.logout()
-            _toastMessage.value = "Logged out successfully."
-            _currentScreen.value = "auth"
-        }
-    }
-
-    // Dynamic UPI management methods
-    fun fetchUpiId() {
-        viewModelScope.launch {
-            try {
-                val upi = repository.getGlobalUpiId()
-                _dynamicUpiId.value = upi
-            } catch (e: Exception) {
-                android.util.Log.e("MainViewModel", "Error fetching global UPI", e)
-            }
-        }
-    }
-
-    fun adminUpdateUpiId(newUpi: String) {
-        viewModelScope.launch {
-            val ok = repository.updateGlobalUpiId(newUpi)
-            if (ok) {
-                _dynamicUpiId.value = newUpi
-                _toastMessage.value = "UPI ID updated successfully!"
-            } else {
-                _toastMessage.value = "Failed to update UPI ID."
-            }
-        }
-    }
-
-    // Admin user search and balance update methods
-    fun adminSearchUser(whatsapp: String) {
-        viewModelScope.launch {
-            if (whatsapp.isBlank()) {
-                _toastMessage.value = "Please enter a valid number to search."
-                return@launch
-            }
-            _isRefreshing.value = true
-            val user = repository.searchUserAdmin(whatsapp.trim())
-            _isRefreshing.value = false
-            if (user != null) {
-                _searchedUser.value = user
-                _toastMessage.value = "Found user: ${user.name}"
-            } else {
-                _searchedUser.value = null
-                _toastMessage.value = "User with number $whatsapp not found."
-            }
-        }
-    }
-
-    fun adminUpdateUserBalance(whatsapp: String, deposit: Double, withdrawal: Double) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.updateUserBalanceAdmin(whatsapp, deposit, withdrawal)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "User balances updated successfully!"
-                // Refresh searched user to show updated numbers
-                val user = repository.searchUserAdmin(whatsapp)
-                _searchedUser.value = user
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to update balances on server."
-            }
-        }
-    }
-
-    // Get tournament registrations
-    fun adminFetchRegistrations(tournamentId: Int) {
-        viewModelScope.launch {
-            try {
-                val regs = repository.getTournamentRegistrations(tournamentId)
-                _currentTournamentRegistrations.value = regs
-            } catch (e: Exception) {
-                _toastMessage.value = "Error fetching registrations: ${e.message}"
-            }
-        }
-    }
-
-    // Join Esports tournament with team details
-    fun registerTournamentWithTeam(tournamentId: Int, teamName: String, teamMembers: String, onComplete: (Boolean) -> Unit = {}) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            val nameClean = if (teamName.isNotBlank()) teamName.trim() else user.name
-            val membersClean = if (teamMembers.isNotBlank()) teamMembers.trim() else user.name
-            // Format whatsapp_number as raw_whatsapp|team_name|members
-            val formattedWhatsapp = "${user.whatsappNumber}|$nameClean|$membersClean"
-
-            _isRefreshing.value = true
-            val errorMsg = repository.registerForTournament(formattedWhatsapp, tournamentId)
-            _isRefreshing.value = false
-
-            if (errorMsg != null) {
-                _toastMessage.value = errorMsg
-                onComplete(false)
-            } else {
-                _toastMessage.value = "Successfully registered as '$nameClean'!"
-                localJoinedIds.add(tournamentId)
-                refreshOnlineData()
-                onComplete(true)
-            }
-        }
-    }
-
-    // Assign slots range to teams
-    fun adminAssignSlots(tournamentId: Int, fromSlot: Int, toSlot: Int) {
-        viewModelScope.launch {
-            try {
-                val regs = repository.getTournamentRegistrations(tournamentId)
-                if (regs.isEmpty()) {
-                    _toastMessage.value = "No teams have joined this tournament yet."
-                    return@launch
-                }
-                _isRefreshing.value = true
-                var currentSlot = fromSlot
-                var updatedCount = 0
-                for (reg in regs) {
-                    if (currentSlot > toSlot) {
-                        break
-                    }
-                    // Registration formatted string check
-                    val parts = reg.whatsappNumber.split("|").toMutableList()
-                    while (parts.size < 3) {
-                        parts.add("")
-                    }
-                    // Put slot number as 4th element (index 3)
-                    if (parts.size == 3) {
-                        parts.add("Slot $currentSlot")
-                    } else {
-                        parts[3] = "Slot $currentSlot"
-                    }
-                    val formattedString = parts.joinToString("|")
-                    val ok = repository.updateRegistrationAdmin(reg.id, formattedString)
-                    if (ok) {
-                        updatedCount++
-                        currentSlot++
-                    }
-                }
-                _isRefreshing.value = false
-                _toastMessage.value = "Successfully assigned slot numbers to $updatedCount teams!"
-                adminFetchRegistrations(tournamentId)
-            } catch (e: Exception) {
-                _isRefreshing.value = false
-                _toastMessage.value = "Error assigning slots: ${e.message}"
-            }
-        }
-    }
-
-    // Declare position and Reward
-    fun adminDeclarePositionAndReward(registrationId: Int, position: String, prizeAmount: Double, rawWhatsapp: String, tournamentTitle: String) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.declarePositionAndReward(registrationId, position, prizeAmount, rawWhatsapp, tournamentTitle)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "Declared Position $position. Reward of ₹$prizeAmount awarded!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to award reward."
-            }
-        }
-    }
-
-    // Generic full edit of tournament details
-    fun adminUpdateTournamentDetails(
-        id: Int,
-        game: String,
-        title: String,
-        posterRes: String,
-        entryFee: Double,
-        prizePool: Double,
-        prize1st: Double,
-        prize2nd: Double,
-        prize3rd: Double,
-        prize4th: Double,
-        rules: String,
-        startTime: String
-    ) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.updateTournamentAdmin(id, game, title, posterRes, entryFee, prizePool, prize1st, prize2nd, prize3rd, prize4th, rules, startTime)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "Tournament updated successfully!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to update tournament details."
-            }
-        }
-    }
-
-    // Full Delete Tournament
-    fun adminDeleteTournament(id: Int) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.deleteTournament(id)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "Tournament deleted successfully!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to delete tournament."
-            }
-        }
-    }
-
-    fun adminStartTournament(id: Int) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.startTournament(id)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "Tournament started successfully!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to start tournament."
-            }
-        }
-    }
-
-    fun adminFinishTournament(id: Int) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val ok = repository.finishTournament(id)
-            _isRefreshing.value = false
-            if (ok) {
-                _toastMessage.value = "Tournament finished successfully!"
-                refreshOnlineData()
-            } else {
-                _toastMessage.value = "Failed to finish tournament."
-            }
-        }
-    }
-
-    fun uploadPhoto(base64Image: String, filename: String, mimeType: String, onResult: (String?) -> Unit) {
-        viewModelScope.launch {
-            _isRefreshing.value = true
-            val result = repository.uploadPhoto(base64Image, filename, mimeType)
-            _isRefreshing.value = false
-            result.onSuccess { url ->
-                onResult(url)
-            }.onFailure { err ->
-                _toastMessage.value = "Upload failed: ${err.message}"
-                onResult(null)
-            }
-        }
-    }
-
-
-    // --- NOTIFICATION SYSTEM STATE & LOGIC ---
-    private val _inAppNotifications = MutableStateFlow<List<InAppNotification>>(emptyList())
-    val inAppNotifications: StateFlow<List<InAppNotification>> = _inAppNotifications.asStateFlow()
-
-    fun loadInAppNotifications() {
-        val sharedPrefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
-        val jsonStr = sharedPrefs.getString("in_app_notifications", "[]") ?: "[]"
-        try {
-            val array = org.json.JSONArray(jsonStr)
-            val list = mutableListOf<InAppNotification>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                list.add(
-                    InAppNotification(
-                        id = obj.getString("id"),
-                        title = obj.getString("title"),
-                        content = obj.getString("content"),
-                        timestamp = obj.getLong("timestamp"),
-                        isRead = obj.getBoolean("isRead")
+                val array = org.json.JSONArray(jsonString)
+                val list = mutableListOf<LudoMatchRequest>()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val id = obj.getString("userId")
+                    val name = obj.getString("userName")
+                    val tId = obj.getInt("tournamentId")
+                    val time = obj.getLong("timestamp")
+                    // We need a dummy tournament object here, or fetch it.
+                    // For simplicity, we just create a minimal tournament.
+                    val t = com.example.data.Tournament(
+                        id = tId,
+                        game = "Ludo",
+                        title = "Ludo Live Match",
+                        posterRes = "",
+                        entryFee = 0.0,
+                        prizePool = 0.0,
+                        prize1st = 0.0,
+                        prize2nd = 0.0,
+                        prize3rd = 0.0,
+                        prize4th = 0.0,
+                        rules = "",
+                        roomId = null,
+                        roomPassword = null,
+                        startTime = "Live"
                     )
-                )
-            }
-            _inAppNotifications.value = list.sortedByDescending { it.timestamp }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun saveInAppNotifications(list: List<InAppNotification>) {
-        val sharedPrefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
-        try {
-            val array = org.json.JSONArray()
-            for (item in list) {
-                val obj = org.json.JSONObject().apply {
-                    put("id", item.id)
-                    put("title", item.title)
-                    put("content", item.content)
-                    put("timestamp", item.timestamp)
-                    put("isRead", item.isRead)
+                    list.add(LudoMatchRequest(id, name, t, time))
                 }
-                array.put(obj)
-            }
-            sharedPrefs.edit().putString("in_app_notifications", array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun markAllNotificationsAsRead() {
-        val updated = _inAppNotifications.value.map { it.copy(isRead = true) }
-        _inAppNotifications.value = updated
-        saveInAppNotifications(updated)
-    }
-
-    fun clearNotifications() {
-        _inAppNotifications.value = emptyList()
-        saveInAppNotifications(emptyList())
-    }
-
-    private fun checkNotifications(
-        regs: List<com.example.data.Registration>,
-        tournaments: List<Tournament>
-    ) {
-        val context = getApplication<Application>()
-        val sharedPrefs = context.getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
-        val editor = sharedPrefs.edit()
-
-        val joinedIds = regs.map { it.tournamentId }.toSet()
-        val joinedTournaments = tournaments.filter { joinedIds.contains(it.id) }
-
-        var hasNew = false
-        val currentNotifications = _inAppNotifications.value.toMutableList()
-
-        for (tour in joinedTournaments) {
-            val reg = regs.find { it.tournamentId == tour.id } ?: continue
-            
-            // 1. Check Slot Number
-            val parts = reg.whatsappNumber.split("|")
-            val slotNum = parts.getOrNull(3) ?: ""
-            if (slotNum.isNotBlank() && !slotNum.equals("Unassigned", ignoreCase = true)) {
-                val slotKey = "notified_slot_${tour.id}"
-                val lastNotifiedSlot = sharedPrefs.getString(slotKey, "")
-                if (lastNotifiedSlot != slotNum) {
-                    val title = "🎮 Slot Number Assigned!"
-                    val content = "Tournament '${tour.title}': Your team is assigned to $slotNum."
-                    
-                    sendSystemNotification(title, content)
-                    
-                    currentNotifications.add(
-                        InAppNotification(
-                            id = "slot_${tour.id}_${System.currentTimeMillis()}",
-                            title = title,
-                            content = content
-                        )
-                    )
-                    editor.putString(slotKey, slotNum)
-                    hasNew = true
-                }
-            }
-
-            // 2. Check Room ID and Password
-            val roomId = tour.roomId
-            val roomPass = tour.roomPassword
-            if (!roomId.isNullOrBlank() || !roomPass.isNullOrBlank()) {
-                val rId = roomId ?: "N/A"
-                val rPass = roomPass ?: "N/A"
-                val roomVal = "${rId}|${rPass}"
-                val roomKey = "notified_room_${tour.id}"
-                val lastNotifiedRoom = sharedPrefs.getString(roomKey, "")
-                
-                if (lastNotifiedRoom != roomVal) {
-                    val title = "🔑 Room Credentials Available!"
-                    val content = "Tournament '${tour.title}': Room ID is $rId, Password is $rPass. Join soon!"
-                    
-                    sendSystemNotification(title, content)
-                    
-                    currentNotifications.add(
-                        InAppNotification(
-                            id = "room_${tour.id}_${System.currentTimeMillis()}",
-                            title = title,
-                            content = content
-                        )
-                    )
-                    editor.putString(roomKey, roomVal)
-                    hasNew = true
-                }
-            }
-        }
-
-        if (hasNew) {
-            editor.apply()
-            _inAppNotifications.value = currentNotifications.sortedByDescending { it.timestamp }
-            saveInAppNotifications(currentNotifications)
-        }
-    }
-
-    private fun sendSystemNotification(title: String, content: String) {
-        val context = getApplication<Application>()
-        val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val name = "Arena Esports Updates"
-            val desc = "Notifications for Room credentials and Slot numbers"
-            val channel = android.app.NotificationChannel("arena_esports_channel", name, android.app.NotificationManager.IMPORTANCE_HIGH).apply {
-                description = desc
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val builder = androidx.core.app.NotificationCompat.Builder(context, "arena_esports_channel")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(content))
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-
-        try {
-            notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
-    }
-
-    // ==========================================
-    // MINES GAME STATE & ACTIONS
-    // ==========================================
-    private val _showMinesGame = MutableStateFlow(false)
-    val showMinesGame: StateFlow<Boolean> = _showMinesGame.asStateFlow()
-
-    fun setShowMinesGame(show: Boolean) {
-        _showMinesGame.value = show
-    }
-
-    private val _minesActiveGame = MutableStateFlow<com.example.data.MinesGame?>(null)
-    val minesActiveGame: StateFlow<com.example.data.MinesGame?> = _minesActiveGame.asStateFlow()
-
-    private val _minesLoading = MutableStateFlow(false)
-    val minesLoading: StateFlow<Boolean> = _minesLoading.asStateFlow()
-
-    private val _hasCheckedActiveMines = MutableStateFlow(false)
-    val hasCheckedActiveMines: StateFlow<Boolean> = _hasCheckedActiveMines.asStateFlow()
-
-    fun checkActiveMinesGame() {
-        val user = loggedInUser.value ?: return
-        if (_hasCheckedActiveMines.value) return
-        viewModelScope.launch {
-            _minesLoading.value = true
-            val response = repository.checkActiveMines(user.whatsappNumber)
-            if (response.success && response.active) {
-                _minesActiveGame.value = response.game
-            } else {
-                _minesActiveGame.value = null
-            }
-            _hasCheckedActiveMines.value = true
-            _minesLoading.value = false
-        }
-    }
-
-    fun startMinesGame(betAmount: Double, minesCount: Int) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            _minesLoading.value = true
-            val response = repository.startMines(user.whatsappNumber, betAmount, minesCount)
-            if (response.success) {
-                _minesActiveGame.value = response.game
-                _toastMessage.value = "Game started! Tap a tile."
-                refreshOnlineData(silent = true)
-            } else {
-                _toastMessage.value = response.error ?: "Failed to start game"
-            }
-            _minesLoading.value = false
-        }
-    }
-
-    fun revealMinesTile(tileIndex: Int, onGemRevealed: () -> Unit, onMineHit: () -> Unit, onAutoCashout: (Double) -> Unit) {
-        val game = _minesActiveGame.value ?: return
-        viewModelScope.launch {
-            _minesLoading.value = true
-            val response = repository.revealMines(game.id, tileIndex)
-            if (response.success) {
-                if (response.status == "LOST") {
-                    _minesActiveGame.value = game.copy(
-                        revealed = game.revealed + tileIndex,
-                        status = "LOST",
-                        board = response.board
-                    )
-                    _toastMessage.value = "Oops! You hit a mine!"
-                    onMineHit()
-                    refreshOnlineData(silent = true)
-                } else if (response.status == "WON") {
-                    _minesActiveGame.value = game.copy(
-                        revealed = response.revealed ?: (game.revealed + tileIndex),
-                        multiplier = response.multiplier ?: game.multiplier,
-                        status = "WON",
-                        board = response.board
-                    )
-                    val payout = response.prizeWon ?: 0.0
-                    _toastMessage.value = "Perfect! Autocashout: ₹$payout"
-                    onAutoCashout(payout)
-                    refreshOnlineData(silent = true)
-                } else {
-                    _minesActiveGame.value = game.copy(
-                        revealed = response.revealed ?: (game.revealed + tileIndex),
-                        multiplier = response.multiplier ?: game.multiplier,
-                        nextMultiplier = response.nextMultiplier ?: game.nextMultiplier
-                    )
-                    onGemRevealed()
-                }
-            } else {
-                _toastMessage.value = response.error ?: "Failed to reveal cell"
-            }
-            _minesLoading.value = false
-        }
-    }
-
-    fun cashoutMinesGame(onCashoutSuccess: (Double) -> Unit) {
-        val game = _minesActiveGame.value ?: return
-        viewModelScope.launch {
-            _minesLoading.value = true
-            val response = repository.cashoutMines(game.id)
-            if (response.success) {
-                _minesActiveGame.value = game.copy(
-                    status = "WON",
-                    multiplier = response.multiplier,
-                    board = response.board
-                )
-                _toastMessage.value = "Cashed out! You won ₹${response.prizeWon}"
-                onCashoutSuccess(response.prizeWon)
-                refreshOnlineData(silent = true)
-            } else {
-                _toastMessage.value = response.error ?: "Cashout failed"
-            }
-            _minesLoading.value = false
-        }
-    }
-
-    fun resetMinesSessionState() {
-        _minesActiveGame.value = null
-        _hasCheckedActiveMines.value = false
-    }
-
-    // ==========================================
-    // LUDO CLASSIC GAME STATE & ACTIONS
-    // ==========================================
-    private val _ludoRegistrations = MutableStateFlow<List<com.example.data.Registration>>(emptyList())
-    val ludoRegistrations: StateFlow<List<com.example.data.Registration>> = _ludoRegistrations.asStateFlow()
-
-    fun fetchLudoRegistrations(tournamentId: Int) {
-        viewModelScope.launch {
-            try {
-                val regs = repository.getTournamentRegistrations(tournamentId)
-                _ludoRegistrations.value = regs
+                ludoMatchRequests.value = list
             } catch (e: Exception) {
-                Log.e("MainViewModel", "Error fetching ludo registrations", e)
+                e.printStackTrace()
             }
         }
     }
 
-    fun completeLudoGame(tournamentId: Int, score: Int, isWinner: Boolean, onComplete: (Double) -> Unit) {
-        val user = loggedInUser.value ?: return
-        viewModelScope.launch {
-            try {
-                val prizeAwarded = repository.completeLudoTournament(user.whatsappNumber, tournamentId, score, isWinner)
-                if (prizeAwarded != null) {
-                    if (prizeAwarded > 0.0) {
-                        _toastMessage.value = "🏆 Congratulations! You won ₹${"%.2f".format(prizeAwarded)}!"
-                    } else {
-                        _toastMessage.value = "Ludo match completed successfully! Score: $score"
-                    }
-                    refreshOnlineData()
-                    onComplete(prizeAwarded)
-                } else {
-                    _toastMessage.value = "Failed to synchronize game result with server."
-                    onComplete(0.0)
-                }
-            } catch (e: Exception) {
-                _toastMessage.value = "Error completing ludo game: ${e.message}"
-                onComplete(0.0)
-            }
-        }
-    }
 }
 
-data class InAppNotification(
-    val id: String,
-    val title: String,
-    val content: String,
-    val timestamp: Long = System.currentTimeMillis(),
-    val isRead: Boolean = false
-)
+data class LudoMatchRequest(val userId: String, val userName: String, val tournament: com.example.data.Tournament, val timestamp: Long)
+

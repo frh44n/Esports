@@ -168,3 +168,4 @@ data class UserBalances(
     val deposit: Double,
     val withdrawal: Double
 )
+data class InAppNotification(val title: String, val content: String, val timestamp: Long, val isRead: Boolean = false)

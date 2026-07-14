@@ -1,0 +1,1 @@
+sed -i '/var actionBannerText by remember/i \    var p1Lives by remember { mutableIntStateOf(3) }\n    var p2Lives by remember { mutableIntStateOf(3) }\n    var turnSecondsLeft by remember { mutableIntStateOf(8) }\n' app/src/main/java/com/example/ui/LudoScreen.kt

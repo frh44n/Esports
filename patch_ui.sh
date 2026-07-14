@@ -1,0 +1,1 @@
+sed -i 's/Column(horizontalAlignment = Alignment.CenterHorizontally) {/val p1Glow = if (currentTurn == 1) Modifier.border(2.dp, LudoBlue, RoundedCornerShape(4.dp)).padding(4.dp) else Modifier.padding(4.dp)\n                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = p1Glow) {/' app/src/main/java/com/example/ui/LudoScreen.kt
