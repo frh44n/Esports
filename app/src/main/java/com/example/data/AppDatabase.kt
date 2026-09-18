@@ -76,6 +76,38 @@ interface AppDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGameHistory(gameHistory: GameHistory)
+
+    // Promo Code Queries
+    @Query("SELECT * FROM promo_codes ORDER BY code ASC")
+    fun getAllPromoCodesFlow(): Flow<List<PromoCode>>
+
+    @Query("SELECT * FROM promo_codes WHERE code = :code LIMIT 1")
+    suspend fun getPromoCodeByCode(code: String): PromoCode?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPromoCode(promoCode: PromoCode)
+
+    @Query("DELETE FROM promo_codes WHERE code = :code")
+    suspend fun deletePromoCodeByCode(code: String)
+
+    // Promo Usage Queries
+    @Query("SELECT * FROM promo_usages WHERE whatsappNumber = :whatsappNumber ORDER BY timestamp DESC")
+    fun getPromoUsagesForUserFlow(whatsappNumber: String): Flow<List<PromoUsage>>
+
+    @Query("SELECT * FROM promo_usages WHERE whatsappNumber = :whatsappNumber AND code = :code LIMIT 1")
+    suspend fun getPromoUsageByUserAndCode(whatsappNumber: String, code: String): PromoUsage?
+
+    @Query("SELECT * FROM promo_usages WHERE whatsappNumber = :whatsappNumber AND isCompleted = 0 LIMIT 1")
+    suspend fun getUncompletedPromoUsageForUser(whatsappNumber: String): PromoUsage?
+
+    @Query("SELECT * FROM promo_usages WHERE whatsappNumber = :whatsappNumber AND isCompleted = 0 LIMIT 1")
+    fun getUncompletedPromoUsageForUserFlow(whatsappNumber: String): Flow<PromoUsage?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPromoUsage(promoUsage: PromoUsage)
+
+    @Update
+    suspend fun updatePromoUsage(promoUsage: PromoUsage)
 }
 
 @Database(
@@ -84,9 +116,11 @@ interface AppDao {
         Tournament::class,
         Registration::class,
         Transaction::class,
-        GameHistory::class
+        GameHistory::class,
+        PromoCode::class,
+        PromoUsage::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

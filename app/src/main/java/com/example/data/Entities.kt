@@ -168,4 +168,24 @@ data class UserBalances(
     val deposit: Double,
     val withdrawal: Double
 )
-data class InAppNotification(val title: String, val content: String, val timestamp: Long, val isRead: Boolean = false)
+
+@Entity(tableName = "promo_codes")
+data class PromoCode(
+    @PrimaryKey val code: String, // e.g., "LUDO50"
+    val amount: Double,
+    val wageringRule: Double, // wagering multiplier (e.g., 5.0 meaning 5x wagering required)
+    val timesUsed: Int = 0
+)
+
+@Entity(tableName = "promo_usages")
+data class PromoUsage(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val whatsappNumber: String,
+    val code: String,
+    val amount: Double,
+    val wageringMultiplier: Double,
+    val amountWagered: Double = 0.0,
+    val isCompleted: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
+

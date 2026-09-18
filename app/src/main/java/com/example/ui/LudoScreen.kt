@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -202,8 +203,18 @@ fun LudoTournamentsScreen(
 
     var matchingTournament by remember { mutableStateOf<Tournament?>(null) }
     var matchingTimer by remember { mutableStateOf(10) }
-    var activeOpponentName by remember { mutableStateOf("Opponent") }
     
+    LaunchedEffect(matchingTournament) {
+        if (matchingTournament != null) {
+            matchingTimer = 10
+            while (matchingTimer > 0) {
+                delay(1000)
+                matchingTimer--
+            }
+            selectedTournamentForPlay = matchingTournament
+            matchingTournament = null
+        }
+    }
 
     // Filter only Ludo tournaments
     val ludoTours = remember(tournaments) {
@@ -217,27 +228,10 @@ fun LudoTournamentsScreen(
         viewModel.refreshOnlineData()
     }
 
-    if (matchingTournament != null) {
-        LudoMatchmakingScreen(
-            viewModel = viewModel,
-            tournament = matchingTournament!!,
-            onMatchFound = { opponentName ->
-                activeOpponentName = opponentName
-                selectedTournamentForPlay = matchingTournament
-                matchingTournament = null
-            },
-            onCancel = {
-                matchingTournament = null
-            }
-        )
-        return
-    }
-
     if (selectedTournamentForPlay != null) {
         LudoGameManager(
             viewModel = viewModel,
             tournament = selectedTournamentForPlay!!,
-            opponentName = activeOpponentName,
             onBack = { selectedTournamentForPlay = null }
         )
         return
@@ -378,6 +372,39 @@ fun LudoTournamentsScreen(
     }
 
     // --- Matching Dialog ---
+    if (matchingTournament != null) {
+        Dialog(onDismissRequest = { /* Cannot dismiss */ }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBg),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(color = PurpleGlow)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Finding Opponent...",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Match starts in $matchingTimer seconds",
+                        fontSize = 14.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+        }
+    }
 
     // --- Dynamic Registration Dialog ---
     if (selectedTournamentForReg != null) {
@@ -590,10 +617,9 @@ fun LudoTournamentCard(
 ) {
     // Determine slots
     val isDuo = tournament.rules.lowercase().contains("2v2") || tournament.title.lowercase().contains("2v2")
-    val maxSlots = if (isDuo) 8 else 16 // 8 teams or 16 players
+    val maxSlots = if (isDuo) 8 else 2 // 8 teams for Duo, exactly 2 players for 1v1 Solo
     // Fetch simulated/real registrations
-    val minJoined = if (isDuo) 1 else 1 // Always at least 1 player joined
-    val regCount = if (tournament.isJoined) minJoined + 1 else minJoined
+    val regCount = if (tournament.isJoined) 2 else 1
     val spotsLeft = maxSlots - regCount
     val progress = regCount.toFloat() / maxSlots.toFloat()
 
@@ -738,34 +764,6 @@ fun LudoTournamentCard(
                     }
                 }
             }
-
-            // Admin Actions
-            if (isAdmin) {
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = BorderColor)
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onStartTour,
-                        enabled = !isStarted && !isFinished,
-                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGlow),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Start Tour", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                    }
-                    Button(
-                        onClick = onFinishTour,
-                        enabled = isStarted,
-                        colors = ButtonDefaults.buttonColors(containerColor = RedGlow),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Finish Tour", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
         }
     }
 }
@@ -775,7 +773,6 @@ fun LudoTournamentCard(
 fun LudoGameManager(
     viewModel: MainViewModel,
     tournament: Tournament,
-    opponentName: String = "Opponent",
     onBack: () -> Unit
 ) {
     var gameState by remember { mutableStateOf("playing") } // "playing", "finished"
@@ -787,7 +784,6 @@ fun LudoGameManager(
             LudoGamePlayScreen(
                 viewModel = viewModel,
                 tournament = tournament,
-                opponentName = opponentName,
                 onGameFinished = { score, isWinner ->
                     finalScore = score
                     userWonMatch = isWinner
@@ -811,12 +807,15 @@ fun LudoGameManager(
 fun LudoGamePlayScreen(
     viewModel: MainViewModel,
     tournament: Tournament,
-    opponentName: String = "Opponent",
     onGameFinished: (Int, Boolean) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var matchSecondsLeft by remember { mutableIntStateOf(900) } // 15 minutes limit
 
+    val botNames by viewModel.botNames.collectAsStateWithLifecycle()
+    val botName = remember(botNames) { 
+        if (botNames.isNotEmpty()) botNames.random() else "Ludo Pro Bot" 
+    }
 
     // Real-time points state
     var p1Points by remember { mutableIntStateOf(0) }
@@ -844,16 +843,24 @@ fun LudoGamePlayScreen(
     var diceValue by remember { mutableIntStateOf(1) }
     var isRolling by remember { mutableStateOf(false) }
     var hasRolledThisTurn by remember { mutableStateOf(false) }
+    var isPawnMoving by remember { mutableStateOf(false) }
 
     // Highlight playable pawns
     val playablePawns = remember { mutableStateListOf<Int>() }
 
     // Action banner
-    var p1Lives by remember { mutableIntStateOf(3) }
-    var p2Lives by remember { mutableIntStateOf(3) }
-    var turnSecondsLeft by remember { mutableIntStateOf(8) }
-
     var actionBannerText by remember { mutableStateOf("ROLL DICE TO START!") }
+
+    var userLifelines by remember { mutableIntStateOf(3) }
+    var moveTimerSeconds by remember { mutableIntStateOf(8) }
+    var isTimerActive by remember { mutableStateOf(false) }
+
+    fun setPawnPosition(pawnId: Int, newPos: Int) {
+        val idx = pawns.indexOfFirst { it.id == pawnId }
+        if (idx != -1) {
+            pawns[idx] = pawns[idx].copy(position = newPos)
+        }
+    }
 
     // Timer countdown
     LaunchedEffect(Unit) {
@@ -885,7 +892,8 @@ fun LudoGamePlayScreen(
     }
 
     // Capturing pawn check
-    fun checkCaptures(movedPawn: LudoPawn) {
+    fun checkCaptures(movedPawn: LudoPawn): Boolean {
+        var capturedAny = false
         val targetCoord = if (movedPawn.position in 0..50) {
             val idx = if (movedPawn.player == 1) {
                 (39 + movedPawn.position) % 52
@@ -903,7 +911,6 @@ fun LudoGamePlayScreen(
             ).contains(targetCoord)
 
             if (!isSafeStar) {
-                var capturedAny = false
                 // Search for opponent pawns on the same track coordinate
                 pawns.forEach { other ->
                     if (other.player != movedPawn.player && other.position in 0..50) {
@@ -915,14 +922,14 @@ fun LudoGamePlayScreen(
                         val otherCoord = TrackCoordinates[otherIdx]
                         if (otherCoord == targetCoord) {
                             // CAPTURE! Send opponent pawn back to yard
-                            other.position = -1
+                            setPawnPosition(other.id, -1)
                             capturedAny = true
                             if (movedPawn.player == 1) {
                                 p1Points += 50
                                 actionBannerText = "💥 YOU CAPTURED GREEN PAWN! +50 PTS"
                             } else {
                                 p2Points += 50
-                                actionBannerText = "💥 ${opponentName.uppercase()} CAPTURED YOUR BLUE PAWN!"
+                                actionBannerText = "💥 ${botName.uppercase()} CAPTURED YOUR BLUE PAWN!"
                             }
                         }
                     }
@@ -932,12 +939,13 @@ fun LudoGamePlayScreen(
                 }
             }
         }
+        return capturedAny
     }
 
     // Bot AI Turn execution
-    fun executeOpponentTurn() {
+    fun executeBotTurn() {
         coroutineScope.launch {
-            actionBannerText = "${opponentName.uppercase()} IS THINKING..."
+            actionBannerText = "${botName.uppercase()} IS THINKING..."
             delay(1200)
 
             // Roll dice animation
@@ -950,19 +958,20 @@ fun LudoGamePlayScreen(
             isRolling = false
 
             val roll = diceValue
-            actionBannerText = "${opponentName.uppercase()} ROLLED A $roll!"
+            actionBannerText = "${botName.uppercase()} ROLLED A $roll!"
             delay(800)
 
             val moves = getPlayablePawns(2, roll)
             if (moves.isEmpty()) {
-                actionBannerText = "NO MOVES FOR ${opponentName.uppercase()}!"
+                actionBannerText = "NO MOVES FOR ${botName.uppercase()}!"
                 delay(1200)
                 // Shift turn
                 currentTurn = 1
                 hasRolledThisTurn = false
                 actionBannerText = "YOUR TURN! ROLL THE DICE."
             } else {
-                // High IQ Bot Logic: prioritizes capturing, escaping danger, landing on stars, and advancing
+                // --- THE ULTIMATE 10-PILLAR HUMAN-LIKE STRATEGIC BOT HEURISTIC ENGINE ---
+                // Replicates 100s of human strategic decisions, weighing danger, progress value, blocking tactics, and ruthless captures.
                 val safeStars = listOf(
                     Pair(1, 6), Pair(8, 1), Pair(13, 8), Pair(6, 13), 
                     Pair(2, 8), Pair(6, 2), Pair(12, 6), Pair(8, 12)
@@ -972,69 +981,195 @@ fun LudoGamePlayScreen(
                     val pawn = pawns.first { it.id == id }
                     var priority = 0
                     
+                    // --- STRATEGIC PILLAR 8: Mobilization & Base Release ---
+                    // Releasing pawns is vital to maintain board pressure and defensive clusters.
                     if (pawn.position == -1 && roll == 6) {
-                        priority = 60 // Good to get pawns out
+                        val activeFieldCount = pawns.count { it.player == 2 && it.position in 0..55 }
+                        priority = if (activeFieldCount == 0) {
+                            // Empty board! Getting a pawn on the field is of paramount importance.
+                            1500
+                        } else {
+                            // Introduce a new threat while having others on the board.
+                            550
+                        }
                     } else {
                         val newPos = pawn.position + roll
-                        if (newPos <= 50) {
+                        
+                        // --- STRATEGIC PILLAR 1: Finishing / Goal Move (Pure Triumph) ---
+                        // Reaching the safe home is the ultimate objective. Always secure a finished pawn!
+                        if (newPos == 56) {
+                            priority += 10000
+                        } else if (newPos < 56) {
                             val newIdx = (13 + newPos) % 52
                             val targetCoord = TrackCoordinates[newIdx]
                             val isSafeStar = safeStars.contains(targetCoord)
                             
-                            // 1. Can we capture an opponent?
+                            // --- STRATEGIC PILLAR 2: Ruthless Capture & Opponent Position Scaling ---
+                            // Capturing an opponent halts their progress. Humans prioritize capturing pawns that are near home.
                             var canCapture = false
+                            var maxCapturedPawnProgress = 0
                             pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
                                 val oppIdx = (39 + opp.position) % 52
                                 if (TrackCoordinates[oppIdx] == targetCoord && !isSafeStar) {
                                     canCapture = true
+                                    if (opp.position > maxCapturedPawnProgress) {
+                                        maxCapturedPawnProgress = opp.position
+                                    }
                                 }
                             }
-                            if (canCapture) priority += 100 // Top priority!
                             
-                            // 2. Are we landing on a safe star?
-                            if (isSafeStar) priority += 40
+                            if (canCapture) {
+                                priority += 3000 // Huge base score for capture
+                                // Human behavior: Capturing highly advanced pawns yields massive strategic satisfaction!
+                                priority += (maxCapturedPawnProgress * 25)
+                                
+                                // Extra bonus for capturing an opponent that is about to enter their home lane
+                                if (maxCapturedPawnProgress > 40) {
+                                    priority += 1000
+                                }
+                            }
                             
-                            // 3. Are we escaping from a threatened position?
+                            // --- STRATEGIC PILLAR 4: Strategic Star Landing (The Safe Shelter) ---
+                            // Sitting on safe spots makes the pawn invulnerable and acts as an obstacle.
+                            if (isSafeStar) {
+                                priority += 750
+                                
+                                // Ambush positioning: Star near opponent's base entry creates a perfect trap
+                                if (targetCoord == Pair(1, 8) || targetCoord == Pair(2, 8)) {
+                                    priority += 200
+                                }
+                            }
+                            
+                            // --- STRATEGIC PILLAR 3: Lethal Escape & Progress Protection ---
+                            // If a pawn is currently threatened by an opponent trailing behind, it must run away.
                             val currentIdx = (13 + pawn.position) % 52
                             val currentCoord = TrackCoordinates[currentIdx]
                             val currentlySafe = safeStars.contains(currentCoord)
                             
                             if (!currentlySafe && pawn.position >= 0) {
                                 var isThreatened = false
+                                var closestThreatDist = 52
                                 pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
                                     val oppIdx = (39 + opp.position) % 52
                                     val dist = (currentIdx - oppIdx + 52) % 52
-                                    if (dist in 1..5) isThreatened = true
+                                    if (dist in 1..6) {
+                                        isThreatened = true
+                                        if (dist < closestThreatDist) {
+                                            closestThreatDist = dist
+                                        }
+                                    }
                                 }
-                                if (isThreatened) priority += 50
+                                if (isThreatened) {
+                                    // Scale escape priority: closer threats are more urgent (dist=1 is critical)
+                                    var escapeWeight = 400 + (7 - closestThreatDist) * 180
+                                    
+                                    // Highly advanced pawns MUST escape! Losing a pawn with 45 progress hurts 10x more than one with 5.
+                                    escapeWeight += (pawn.position * 15)
+                                    
+                                    priority += escapeWeight
+                                }
                             }
                             
-                            // 4. Progress towards home
-                            priority += newPos / 2
-                            if (newPos > 44) priority += 20 // Close to home column
-                        } else if (newPos == 56) {
-                            priority += 200 // Winning move!
-                        } else {
-                            priority += 15 // Advancing inside home column
+                            // --- STRATEGIC PILLAR 5: Home Track Entry & Safe Zone Progress ---
+                            // Stepping into the final corridor guarantees absolute safety from any future threats.
+                            if (newPos in 51..55) {
+                                priority += 600
+                                priority += (newPos - 50) * 100 // Scale priority further up the lane
+                            }
+                            
+                            // --- STRATEGIC PILLAR 6: Barricade & Stack Formation ---
+                            // Landing on the same space as another friendly pawn creates a strong defensive blockade.
+                            val formingBlockade = pawns.any { it.player == 2 && it.id != id && it.position == newPos && it.position >= 0 }
+                            if (formingBlockade) {
+                                priority += 450
+                                if (newPos > 30) {
+                                    priority += 200 // Stronger blockade closer to our home lane
+                                }
+                            }
+                            
+                            // --- STRATEGIC PILLAR 7: Suicide Avoidance & Calculated Risk ---
+                            // Avoid moving into an exposed cell where an opponent trailing 1..6 steps behind can easily capture us.
+                            var targetThreatened = false
+                            var targetThreatDist = 52
+                            pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
+                                val oppIdx = (39 + opp.position) % 52
+                                val dist = (newIdx - oppIdx + 52) % 52
+                                if (dist in 1..6 && !isSafeStar) {
+                                    targetThreatened = true
+                                    if (dist < targetThreatDist) {
+                                        targetThreatDist = dist
+                                    }
+                                }
+                            }
+                            if (targetThreatened) {
+                                // Exposing a valuable, far-advanced pawn is extremely risky and penalized heavily
+                                var penalty = 500 + (pawn.position * 12)
+                                // Slight offset if the threatening opponent is further away (e.g. 6 steps) vs extremely close (e.g. 1 step)
+                                penalty -= (targetThreatDist * 25)
+                                
+                                priority -= penalty
+                            }
+                            
+                            // --- STRATEGIC PILLAR 9: Opponent Home Blocking & Ambush ---
+                            // Positioning pawns near coordinates 35-42 allows intercepting the user's incoming pawns.
+                            val isNearOpponentHome = (newIdx >= 35 && newIdx <= 42)
+                            if (isNearOpponentHome) {
+                                priority += 120
+                            }
+
+                            // --- STRATEGIC PILLAR 11: Stalk & Chase Opponent (Run Behind) ---
+                            // Position ourselves 1 to 6 steps behind an opponent pawn to threaten them on the next turn.
+                            // Closer is better because it's a more immediate threat.
+                            var maxChaseBonus = 0
+                            pawns.filter { it.player == 1 && it.position in 0..50 }.forEach { opp ->
+                                val oppIdx = (39 + opp.position) % 52
+                                val dist = (oppIdx - newIdx + 52) % 52
+                                if (dist in 1..6) {
+                                    val oppIsSafe = safeStars.contains(TrackCoordinates[oppIdx])
+                                    val baseChase = (7 - dist) * 150 // dist=1 -> 900, dist=6 -> 150
+                                    val bonus = if (oppIsSafe) {
+                                        baseChase / 2 // Opponent is safe on star, so lower priority, but still worth chasing
+                                    } else {
+                                        baseChase
+                                    }
+                                    if (bonus > maxChaseBonus) {
+                                        maxChaseBonus = bonus
+                                    }
+                                }
+                            }
+                            priority += maxChaseBonus
+                            
+                            // --- STRATEGIC PILLAR 10: Progress & Timing Heuristics ---
+                            // Default to moving pawns forward to prevent stagnation.
+                            priority += (newPos * 5)
+                            if (newPos > 40) {
+                                priority += 300 // Extra push to cross the finishing line
+                            }
                         }
                     }
+                    
+                    // Add subtle random variation to simulate organic human decision-making, breaking any static ties.
+                    priority += Random.nextInt(0, 10)
                     priority
                 } ?: moves.random()
 
                 val pawn = pawns.first { it.id == chosenId }
-                if (pawn.position == -1) {
-                    pawn.position = 0
+                val currentPawnPos = pawn.position
+                if (currentPawnPos == -1) {
+                    setPawnPosition(pawn.id, 0)
                     p2Points += 1
-                    actionBannerText = "${opponentName.uppercase()} MOVED GREEN PAWN OUT!"
+                    actionBannerText = "${botName.uppercase()} MOVED GREEN PAWN OUT!"
                     LudoSoundEffects.playMove()
                     delay(250)
                 } else {
-                    actionBannerText = "${opponentName.uppercase()} IS MOVING GREEN PAWN..."
+                    actionBannerText = "${botName.uppercase()} IS MOVING GREEN PAWN..."
+                    var tempPos = currentPawnPos
                     for (step in 1..roll) {
-                        if (pawn.position + 1 <= 56) {
-                            pawn.position += 1
+                        if (tempPos + 1 <= 56) {
+                            tempPos += 1
+                            setPawnPosition(pawn.id, tempPos)
                             p2Points += 1
-                            if (pawn.position == 56) {
+                            if (tempPos == 56) {
                                 p2Points += 100 // Finished bonus
                                 actionBannerText = "🏆 BOT GOT A PAWN HOME!"
                                 LudoSoundEffects.playFinish()
@@ -1046,7 +1181,8 @@ fun LudoGamePlayScreen(
                     }
                 }
 
-                checkCaptures(pawn)
+                val finalPawn = pawns.first { it.id == chosenId }
+                val captured = checkCaptures(finalPawn)
                 delay(800)
 
                 // Check win condition
@@ -1056,10 +1192,14 @@ fun LudoGamePlayScreen(
                     return@launch
                 }
 
-                // If rolled a 6, gets another turn, else switch
-                if (roll == 6) {
-                    actionBannerText = "BOT ROLLED A 6! ROLLING AGAIN..."
-                    executeOpponentTurn()
+                // If rolled a 6 or captured, gets another turn, else switch
+                if (roll == 6 || captured) {
+                    if (captured) {
+                        actionBannerText = "BOT CAPTURED A PAWN! ROLLING AGAIN..."
+                    } else {
+                        actionBannerText = "BOT ROLLED A 6! ROLLING AGAIN..."
+                    }
+                    executeBotTurn()
                 } else {
                     currentTurn = 1
                     hasRolledThisTurn = false
@@ -1071,80 +1211,74 @@ fun LudoGamePlayScreen(
 
     // User pawn move click
     fun onUserPawnClicked(pawnId: Int) {
-        if (currentTurn != 1 || !hasRolledThisTurn || !playablePawns.contains(pawnId)) return
+        if (currentTurn != 1 || !hasRolledThisTurn || !playablePawns.contains(pawnId) || isPawnMoving) return
+
+        isTimerActive = false // Stop the 8s timer
+        isPawnMoving = true
 
         val pawn = pawns.first { it.id == pawnId }
         val roll = diceValue
 
         playablePawns.clear()
-        hasRolledThisTurn = false // Prevent multi-tapping during animation
 
         coroutineScope.launch {
-            if (pawn.position == -1) {
-                pawn.position = 0
-                p1Points += 1
-                actionBannerText = "MOVED BLUE PAWN OUT OF YARD!"
-                LudoSoundEffects.playMove()
-                delay(250)
-            } else {
-                actionBannerText = "MOVING BLUE PAWN..."
-                for (step in 1..roll) {
-                    if (pawn.position + 1 <= 56) {
-                        pawn.position += 1
-                        p1Points += 1
-                        if (pawn.position == 56) {
-                            p1Points += 100 // Finished bonus
-                            actionBannerText = "🎉 YOU GOT A BLUE PAWN HOME! +100 PTS"
-                            LudoSoundEffects.playFinish()
-                        } else {
-                            LudoSoundEffects.playMove()
+            try {
+                val currentPawnPos = pawn.position
+                if (currentPawnPos == -1) {
+                    setPawnPosition(pawn.id, 0)
+                    p1Points += 1
+                    actionBannerText = "MOVED BLUE PAWN OUT OF YARD!"
+                    LudoSoundEffects.playMove()
+                    delay(250)
+                } else {
+                    actionBannerText = "MOVING BLUE PAWN..."
+                    var tempPos = currentPawnPos
+                    for (step in 1..roll) {
+                        if (tempPos + 1 <= 56) {
+                            tempPos += 1
+                            setPawnPosition(pawn.id, tempPos)
+                            p1Points += 1
+                            if (tempPos == 56) {
+                                p1Points += 100 // Finished bonus
+                                actionBannerText = "🎉 YOU GOT A BLUE PAWN HOME! +100 PTS"
+                                LudoSoundEffects.playFinish()
+                            } else {
+                                LudoSoundEffects.playMove()
+                            }
+                            delay(220)
                         }
-                        delay(220)
                     }
                 }
-            }
 
-            checkCaptures(pawn)
-            delay(600)
+                val finalPawn = pawns.first { it.id == pawnId }
+                val captured = checkCaptures(finalPawn)
+                delay(600)
 
-            // Check user win
-            if (pawns.filter { it.player == 1 }.all { it.position == 56 }) {
-                delay(800)
-                onGameFinished(p1Points, true)
-                return@launch
-            }
+                // Check user win
+                if (pawns.filter { it.player == 1 }.all { it.position == 56 }) {
+                    delay(800)
+                    onGameFinished(p1Points, true)
+                    return@launch
+                }
 
-            // Standard Ludo: 6 gives extra turn
-            if (roll == 6) {
-                hasRolledThisTurn = false
-                actionBannerText = "ROLLED A 6! ROLL AGAIN."
-            } else {
-                currentTurn = 2
-                hasRolledThisTurn = false
-                executeOpponentTurn()
-            }
-        }
-    }
-
-    LaunchedEffect(currentTurn, hasRolledThisTurn) {
-        turnSecondsLeft = 8
-        while (turnSecondsLeft > 0) {
-            delay(1000)
-            turnSecondsLeft--
-        }
-        if (currentTurn == 1) {
-            p1Lives--
-            if (p1Lives <= 0) {
-                onGameFinished(p1Points, false)
-            } else {
-                currentTurn = 2
-                hasRolledThisTurn = false
-                playablePawns.clear()
-                executeOpponentTurn()
+                // Standard Ludo: 6 or capture gives extra turn
+                if (roll == 6 || captured) {
+                    hasRolledThisTurn = false
+                    if (captured) {
+                        actionBannerText = "💥 CAPTURED! EXTRA ROLL GRANTED."
+                    } else {
+                        actionBannerText = "ROLLED A 6! ROLL AGAIN."
+                    }
+                } else {
+                    currentTurn = 2
+                    hasRolledThisTurn = false
+                    executeBotTurn()
+                }
+            } finally {
+                isPawnMoving = false
             }
         }
     }
-
 
     // Roll dice click
     fun onUserRollClicked() {
@@ -1168,11 +1302,46 @@ fun LudoGamePlayScreen(
                 delay(1200)
                 currentTurn = 2
                 hasRolledThisTurn = false
-                executeOpponentTurn()
+                executeBotTurn()
             } else {
                 actionBannerText = "ROLLED A $roll! CHOOSE BLUE PAWN TO MOVE."
                 playablePawns.addAll(moves)
+                moveTimerSeconds = 8
+                isTimerActive = true
             }
+        }
+    }
+
+    LaunchedEffect(currentTurn, hasRolledThisTurn, isRolling) {
+        if (currentTurn == 1 && hasRolledThisTurn && !isRolling) {
+            moveTimerSeconds = 8
+            isTimerActive = true
+            while (moveTimerSeconds > 0 && isTimerActive) {
+                delay(1000)
+                if (isTimerActive) {
+                    moveTimerSeconds--
+                }
+            }
+            if (moveTimerSeconds == 0 && isTimerActive) {
+                isTimerActive = false
+                coroutineScope.launch {
+                    userLifelines--
+                    if (userLifelines <= 0) {
+                        actionBannerText = "OUT OF LIFELINES! YOU LOST!"
+                        delay(1500)
+                        onGameFinished(p1Points, false)
+                    } else {
+                        actionBannerText = "TIME'S UP! LOST A LIFELINE. BOT'S TURN."
+                        playablePawns.clear()
+                        hasRolledThisTurn = false
+                        currentTurn = 2
+                        delay(1500)
+                        executeBotTurn()
+                    }
+                }
+            }
+        } else {
+            isTimerActive = false
         }
     }
 
@@ -1205,52 +1374,13 @@ fun LudoGamePlayScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val transition = rememberInfiniteTransition(label = "")
-                    val alphaGlow by transition.animateFloat(
-                        initialValue = 0.2f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(800, easing = LinearEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ), label = ""
-                    )
-
-                    val p1Glow = if (currentTurn == 1) Modifier.border(2.dp, LudoBlue.copy(alpha = alphaGlow), RoundedCornerShape(4.dp)).padding(4.dp) else Modifier.padding(4.dp)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = p1Glow) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("YOU (BLUE)", color = LudoBlue, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         Text("$p1Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                        Row {
-                            repeat(3) { i ->
-                                Icon(
-                                    imageVector = if (i < p1Lives) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    contentDescription = "Life",
-                                    tint = RedGlow,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                        if (currentTurn == 1) {
-                            Text("00:0${turnSecondsLeft}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
                     }
-
-                    val p2Glow = if (currentTurn == 2) Modifier.border(2.dp, LudoGreen.copy(alpha = alphaGlow), RoundedCornerShape(4.dp)).padding(4.dp) else Modifier.padding(4.dp)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = p2Glow) {
-                        Text("OPPONENT (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("${botName.uppercase()} (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         Text("$p2Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                        Row {
-                            repeat(3) { i ->
-                                Icon(
-                                    imageVector = if (i < p2Lives) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    contentDescription = "Life",
-                                    tint = RedGlow,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                        if (currentTurn == 2) {
-                            Text("00:0${turnSecondsLeft}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
                     }
                 }
             }
@@ -1434,103 +1564,199 @@ fun LudoGamePlayScreen(
             }
 
             // Draw Pawns / Pins dynamically on top of the Canvas grid
-            pawns.forEach { pawn ->
-                val boardSize = 15f
-                val (col, row) = when {
-                    pawn.position == -1 -> {
-                        // Base yard coordinates
-                        if (pawn.player == 1) {
-                            Pair(1 + pawn.yardXOffset * 4, 10 + pawn.yardYOffset * 4)
-                        } else {
-                            Pair(10 + pawn.yardXOffset * 4, 1 + pawn.yardYOffset * 4)
+            val sortedPawns = remember(pawns, playablePawns, currentTurn) {
+                pawns.sortedWith(compareBy<LudoPawn> { 
+                    playablePawns.contains(it.id) && currentTurn == 1
+                }.thenBy { it.player })
+            }
+
+            sortedPawns.forEach { pawn ->
+                key(pawn.id) {
+                    val baseCoord = when {
+                        pawn.position == -1 -> {
+                            // Base yard coordinates
+                            if (pawn.player == 1) {
+                                Pair(1 + pawn.yardXOffset * 4, 10 + pawn.yardYOffset * 4)
+                            } else {
+                                Pair(10 + pawn.yardXOffset * 4, 1 + pawn.yardYOffset * 4)
+                            }
+                        }
+                        pawn.position in 0..50 -> {
+                            // Track coordinates
+                            val trackIndex = if (pawn.player == 1) {
+                                (39 + pawn.position) % 52
+                            } else {
+                                (13 + pawn.position) % 52
+                            }
+                            val coord = TrackCoordinates[trackIndex]
+                            Pair(coord.first + 0.5f, coord.second + 0.5f)
+                        }
+                        pawn.position in 51..55 -> {
+                            // Home columns coordinates
+                            val step = pawn.position - 51
+                            if (pawn.player == 1) {
+                                Pair(7.5f, 13.5f - step)
+                            } else {
+                                Pair(7.5f, 1.5f + step)
+                            }
+                        }
+                        else -> {
+                            // Finished
+                            if (pawn.player == 1) {
+                                Pair(7.5f, 8.2f)
+                            } else {
+                                Pair(7.5f, 6.8f)
+                            }
                         }
                     }
-                    pawn.position in 0..50 -> {
-                        // Track coordinates
-                        val trackIndex = if (pawn.player == 1) {
-                            (39 + pawn.position) % 52
-                        } else {
-                            (13 + pawn.position) % 52
+
+                    var col = baseCoord.first
+                    var row = baseCoord.second
+
+                    // Precise integer-based check for overlapping pawns on track & home path so none of them get hidden
+                    val sharingPawns = if (pawn.position >= 0 && pawn.position < 56) {
+                        pawns.filter { other ->
+                            if (other.position >= 0 && other.position < 56) {
+                                val onSameCell = if (pawn.position in 0..50 && other.position in 0..50) {
+                                    val idx1 = if (pawn.player == 1) (39 + pawn.position) % 52 else (13 + pawn.position) % 52
+                                    val idx2 = if (other.player == 1) (39 + other.position) % 52 else (13 + other.position) % 52
+                                    idx1 == idx2
+                                } else if (pawn.position in 51..55 && other.position in 51..55) {
+                                    pawn.player == other.player && pawn.position == other.position
+                                } else {
+                                    pawn.position == other.position && pawn.player == other.player
+                                }
+                                onSameCell
+                            } else false
                         }
-                        val coord = TrackCoordinates[trackIndex]
-                        Pair(coord.first + 0.5f, coord.second + 0.5f)
+                    } else {
+                        emptyList()
                     }
-                    pawn.position in 51..55 -> {
-                        // Home columns coordinates
-                        val step = pawn.position - 51
-                        if (pawn.player == 1) {
-                            Pair(7.5f, 13.5f - step)
-                        } else {
-                            Pair(7.5f, 1.5f + step)
+
+                    val pawnSize = if (sharingPawns.size > 1) 16.dp else 24.dp
+
+                    if (sharingPawns.size > 1) {
+                        val idx = sharingPawns.indexOfFirst { it.id == pawn.id }
+                        if (idx != -1) {
+                            val offsetFraction = 0.22f
+                            val (offsetX, offsetY) = when (sharingPawns.size) {
+                                2 -> {
+                                    if (idx == 0) Pair(-offsetFraction, -offsetFraction)
+                                    else Pair(offsetFraction, offsetFraction)
+                                }
+                                3 -> {
+                                    when (idx) {
+                                        0 -> Pair(-offsetFraction, -offsetFraction)
+                                        1 -> Pair(offsetFraction, -offsetFraction)
+                                        else -> Pair(0f, offsetFraction)
+                                    }
+                                }
+                                else -> { // 4 or more
+                                    when (idx) {
+                                        0 -> Pair(-offsetFraction, -offsetFraction)
+                                        1 -> Pair(offsetFraction, -offsetFraction)
+                                        2 -> Pair(-offsetFraction, offsetFraction)
+                                        else -> Pair(offsetFraction, offsetFraction)
+                                    }
+                                }
+                            }
+                            col += offsetX
+                            row += offsetY
                         }
                     }
-                    else -> {
-                        // Finished
-                        if (pawn.player == 1) {
-                            Pair(7.5f, 8.2f)
-                        } else {
-                            Pair(7.5f, 6.8f)
+
+                    // Smooth sliding coordinates
+                    val animatedCol by animateFloatAsState(
+                        targetValue = col,
+                        animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                        label = "pawn_col"
+                    )
+                    val animatedRow by animateFloatAsState(
+                        targetValue = row,
+                        animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                        label = "pawn_row"
+                    )
+
+                    // High-fidelity parabolic jump/hop effect on each step
+                    val hopProgress = remember { Animatable(0f) }
+                    val animTargetPos = pawn.position
+                    LaunchedEffect(animTargetPos) {
+                        if (animTargetPos >= 0) {
+                            hopProgress.snapTo(0f)
+                            hopProgress.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(durationMillis = 150, easing = FastOutLinearInEasing)
+                            )
                         }
                     }
-                }
+                    val hopFraction = hopProgress.value
+                    // Quadratic curve mapping: y = -h * 4 * x * (1 - x)
+                    val hopOffset = (-18).dp * (4f * hopFraction * (1f - hopFraction))
 
-                // Draw interactive Pin marker Composable
-                val color = if (pawn.player == 1) LudoBlue else LudoGreen
-                val isPawnPlayable = playablePawns.contains(pawn.id) && currentTurn == 1
+                    // Draw interactive Pin marker Composable
+                    val color = if (pawn.player == 1) LudoBlue else LudoGreen
+                    val isPawnPlayable = playablePawns.contains(pawn.id) && currentTurn == 1 && !isPawnMoving
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .align(Alignment.Center)
-                ) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val boardPx = constraints.maxWidth
-                        val cellPx = boardPx / 15f
-                        val xOffset = col * cellPx - cellPx / 2
-                        val yOffset = row * cellPx - cellPx / 2
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .align(Alignment.Center)
+                    ) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val boardPx = constraints.maxWidth
+                            val cellPx = boardPx / 15f
+                            val xOffset = animatedCol * cellPx - cellPx / 2
+                            val yOffset = animatedRow * cellPx - cellPx / 2
 
-                        // Breathe scale animation for playable pawns
-                        val infiniteTransition = rememberInfiniteTransition(label = "")
-                        val scale by infiniteTransition.animateFloat(
-                            initialValue = 1f,
-                            targetValue = if (isPawnPlayable) 1.25f else 1f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(600, easing = LinearEasing),
-                                repeatMode = RepeatMode.Reverse
-                            ), label = ""
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .absoluteOffset(
-                                    x = (xOffset / LocalContext.current.resources.displayMetrics.density).dp,
-                                    y = (yOffset / LocalContext.current.resources.displayMetrics.density).dp
+                            // Breathe scale animation: active turn pawns breathe gently, currently playable pawns breathe prominently
+                            val infiniteTransition = rememberInfiniteTransition(label = "pawn_breathe")
+                            val scale by if (pawn.player == currentTurn) {
+                                infiniteTransition.animateFloat(
+                                    initialValue = 1.0f,
+                                    targetValue = if (isPawnPlayable) 1.25f else 1.15f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(if (isPawnPlayable) 800 else 1200, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "scale"
                                 )
-                                .size((cellPx / LocalContext.current.resources.displayMetrics.density).dp)
-                                .clip(CircleShape)
-                                .clickable(enabled = isPawnPlayable) {
-                                    onUserPawnClicked(pawn.id)
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // 3D Pin Style Shape
+                            } else {
+                                remember { mutableStateOf(1.0f) }
+                            }
+
                             Box(
                                 modifier = Modifier
-                                    .size(24.dp)
-                                    .border(
-                                        width = if (isPawnPlayable) 2.dp else 1.dp,
-                                        color = if (isPawnPlayable) CyanGlow else Color.White,
-                                        shape = CircleShape
+                                    .absoluteOffset(
+                                        x = (xOffset / LocalContext.current.resources.displayMetrics.density).dp,
+                                        y = (yOffset / LocalContext.current.resources.displayMetrics.density).dp + hopOffset
                                     )
-                                    .background(color, CircleShape)
-                                    .padding(4.dp),
+                                    .size((cellPx / LocalContext.current.resources.displayMetrics.density).dp),
                                 contentAlignment = Alignment.Center
                             ) {
+                                // 3D Pin Style Shape
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
-                                        .background(Color.White, CircleShape)
-                                )
+                                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                                        .size(pawnSize)
+                                        .clip(CircleShape)
+                                        .clickable(enabled = isPawnPlayable) {
+                                            onUserPawnClicked(pawn.id)
+                                        }
+                                        .border(
+                                            width = if (isPawnPlayable) 2.dp else 1.dp,
+                                            color = if (isPawnPlayable) CyanGlow else Color.White,
+                                            shape = CircleShape
+                                        )
+                                        .background(color, CircleShape)
+                                        .padding(if (sharingPawns.size > 1) 2.dp else 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(pawnSize * 0.33f)
+                                            .background(Color.White, CircleShape)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1568,18 +1794,84 @@ fun LudoGamePlayScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("PLAYER 1 (YOU)", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                        Text(
-                            text = if (currentTurn == 1) "YOUR TURN" else "BOT'S TURN",
-                            color = if (currentTurn == 1) CyanGlow else Color.Gray,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (currentTurn == 1) {
+                                    if (isTimerActive) "YOUR TURN (${moveTimerSeconds}s)" else "YOUR TURN"
+                                } else {
+                                    "BOT'S TURN"
+                                },
+                                color = if (currentTurn == 1) {
+                                    if (isTimerActive && moveTimerSeconds <= 3) RedGlow else CyanGlow
+                                } else {
+                                    Color.Gray
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // Premium Lifeline display (hearts)
+                            Text(
+                                text = "• " + "❤️".repeat(userLifelines),
+                                fontSize = 11.sp
+                            )
+                        }
                     }
+                }
+
+                // 3D Dice rotation and scale animations
+                val isDiceInteractable = currentTurn == 1 && !hasRolledThisTurn && !isRolling && !isPawnMoving
+                val diceInfiniteTransition = rememberInfiniteTransition(label = "dice_breathe")
+                
+                // Breath scaling when it is the user's turn to roll
+                val diceScale by if (isDiceInteractable) {
+                    diceInfiniteTransition.animateFloat(
+                        initialValue = 1.0f,
+                        targetValue = 1.15f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(800, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dice_scale"
+                    )
+                } else if (isRolling) {
+                    // When rolling, let's make it bounce/pulse nicely
+                    diceInfiniteTransition.animateFloat(
+                        initialValue = 0.9f,
+                        targetValue = 1.1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(150, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dice_rolling_pulse"
+                    )
+                } else {
+                    remember { mutableStateOf(1.0f) }
+                }
+
+                // Smooth rotation of the dice when rolling
+                val diceRotation by if (isRolling) {
+                    diceInfiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(300, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "dice_rotation"
+                    )
+                } else {
+                    remember { mutableStateOf(0f) }
                 }
 
                 // Interactive 3D Dice block roller
                 Box(
                     modifier = Modifier
+                        .graphicsLayer(
+                            scaleX = diceScale,
+                            scaleY = diceScale,
+                            rotationZ = diceRotation
+                        )
                         .size(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
@@ -1587,8 +1879,8 @@ fun LudoGamePlayScreen(
                                 colors = listOf(Color.White, Color(0xFFE0E0E0))
                             )
                         )
-                        .border(2.dp, if (currentTurn == 1 && !hasRolledThisTurn) CyanGlow else BorderColor, RoundedCornerShape(12.dp))
-                        .clickable(enabled = currentTurn == 1 && !hasRolledThisTurn && !isRolling) {
+                        .border(2.dp, if (currentTurn == 1 && !hasRolledThisTurn && !isPawnMoving) CyanGlow else BorderColor, RoundedCornerShape(12.dp))
+                        .clickable(enabled = currentTurn == 1 && !hasRolledThisTurn && !isRolling && !isPawnMoving) {
                             onUserRollClicked()
                         },
                     contentAlignment = Alignment.Center

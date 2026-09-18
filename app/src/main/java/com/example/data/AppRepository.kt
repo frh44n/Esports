@@ -382,4 +382,43 @@ class AppRepository(private val appDao: AppDao) {
             )
         )
     }
+
+    // Promo Code repository methods
+    val allPromoCodesFlow: Flow<List<PromoCode>> = appDao.getAllPromoCodesFlow()
+
+    suspend fun getPromoCode(code: String): PromoCode? = withContext(Dispatchers.IO) {
+        appDao.getPromoCodeByCode(code)
+    }
+
+    suspend fun insertPromoCode(promoCode: PromoCode) = withContext(Dispatchers.IO) {
+        appDao.insertPromoCode(promoCode)
+    }
+
+    suspend fun deletePromoCode(code: String) = withContext(Dispatchers.IO) {
+        appDao.deletePromoCodeByCode(code)
+    }
+
+    fun getPromoUsagesForUserFlow(whatsappNumber: String): Flow<List<PromoUsage>> {
+        return appDao.getPromoUsagesForUserFlow(whatsappNumber)
+    }
+
+    fun getActivePromoUsageForUserFlow(whatsappNumber: String): Flow<PromoUsage?> {
+        return appDao.getUncompletedPromoUsageForUserFlow(whatsappNumber)
+    }
+
+    suspend fun getActivePromoUsageForUser(whatsappNumber: String): PromoUsage? = withContext(Dispatchers.IO) {
+        appDao.getUncompletedPromoUsageForUser(whatsappNumber)
+    }
+
+    suspend fun getPromoUsageByUserAndCode(whatsappNumber: String, code: String): PromoUsage? = withContext(Dispatchers.IO) {
+        appDao.getPromoUsageByUserAndCode(whatsappNumber, code)
+    }
+
+    suspend fun insertPromoUsage(promoUsage: PromoUsage) = withContext(Dispatchers.IO) {
+        appDao.insertPromoUsage(promoUsage)
+    }
+
+    suspend fun updatePromoUsage(promoUsage: PromoUsage) = withContext(Dispatchers.IO) {
+        appDao.updatePromoUsage(promoUsage)
+    }
 }

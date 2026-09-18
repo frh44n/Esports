@@ -1,1 +1,0 @@
-sed -i 's/val minesActiveGame: StateFlow<Any?> = MutableStateFlow(null)/val minesActiveGame: StateFlow<com.example.data.MinesGame?> = MutableStateFlow(null)/' app/src/main/java/com/example/ui/MainViewModel.kt

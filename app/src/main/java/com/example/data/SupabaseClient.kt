@@ -132,7 +132,7 @@ object SupabaseClient {
                     User(
                         whatsappNumber = obj.optString("whatsapp_number", whatsapp),
                         name = obj.optString("name", "Gamer"),
-                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null),
+                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null as String?),
                         ownReferralCode = obj.optString("own_referral_code", ""),
                         depositBalance = obj.optDouble("deposit_balance", 0.0),
                         withdrawalBalance = obj.optDouble("withdrawal_balance", 0.0),
@@ -390,7 +390,7 @@ object SupabaseClient {
                                 type = obj.optString("type", ""),
                                 amount = obj.optDouble("amount", 0.0),
                                 upiId = obj.optString("upi_id", ""),
-                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null),
+                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null as String?),
                                 status = obj.optString("status", ""),
                                 timestamp = obj.optLong("timestamp", System.currentTimeMillis())
                             )
@@ -469,7 +469,7 @@ object SupabaseClient {
                                 type = obj.optString("type", ""),
                                 amount = obj.optDouble("amount", 0.0),
                                 upiId = obj.optString("upi_id", ""),
-                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null),
+                                referenceNumber = if (obj.isNull("reference_number")) null else obj.optString("reference_number", null as String?),
                                 status = obj.optString("status", ""),
                                 timestamp = obj.optLong("timestamp", System.currentTimeMillis())
                             )
@@ -854,7 +854,7 @@ object SupabaseClient {
                     User(
                         whatsappNumber = obj.optString("whatsapp_number", whatsapp),
                         name = obj.optString("name", "Gamer"),
-                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null),
+                        referralCodeUsed = if (obj.isNull("referral_code_used")) null else obj.optString("referral_code_used", null as String?),
                         ownReferralCode = obj.optString("own_referral_code", ""),
                         depositBalance = obj.optDouble("deposit_balance", 0.0),
                         withdrawalBalance = obj.optDouble("withdrawal_balance", 0.0),
@@ -1246,7 +1246,7 @@ object SupabaseClient {
     private fun parseError(bodyStr: String): String? {
         return try {
             val obj = JSONObject(bodyStr)
-            obj.optString("error", obj.optString("message", obj.optString("error_description", null)))
+            obj.optString("error", obj.optString("message", obj.optString("error_description", null as String?)))
         } catch (e: Exception) {
             null
         }
@@ -1255,96 +1255,4 @@ object SupabaseClient {
     private fun JSONObject.getOptionalDouble(key: String, fallback: Double): Double {
         return if (isNull(key)) fallback else optDouble(key, fallback)
     }
-
-    fun requestLudoMatch(whatsapp: String, userName: String, tournamentId: Int): Boolean {
-        return try {
-            val json = JSONObject().apply {
-                put("whatsapp", whatsapp)
-                put("userName", userName)
-                put("tournamentId", tournamentId)
-            }
-            val request = Request.Builder()
-                .url(getServerUrl() + "/api/ludo/request-match")
-                .post(json.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    fun cancelLudoMatch(whatsapp: String): Boolean {
-        return try {
-            val json = JSONObject().apply {
-                put("whatsapp", whatsapp)
-            }
-            val request = Request.Builder()
-                .url(getServerUrl() + "/api/ludo/cancel-match")
-                .post(json.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    fun getLudoMatchStatus(whatsapp: String): JSONObject? {
-        return try {
-            val request = Request.Builder()
-                .url(getServerUrl() + "/api/ludo/match-status?whatsapp=" + whatsapp)
-                .get()
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    JSONObject(response.body?.string() ?: "{}")
-                } else null
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    fun fetchLudoMatchRequestsAdmin(): String {
-        return try {
-            val request = Request.Builder()
-                .url(getServerUrl() + "/api/admin/ludo/requests")
-                .get()
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    response.body?.string() ?: "[]"
-                } else "[]"
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            "[]"
-        }
-    }
-
-    fun acceptLudoMatchAdmin(whatsapp: String, opponentName: String): Boolean {
-        return try {
-            val json = JSONObject().apply {
-                put("whatsapp", whatsapp)
-                put("opponentName", opponentName)
-            }
-            val request = Request.Builder()
-                .url(getServerUrl() + "/api/admin/ludo/accept")
-                .post(json.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
 }
