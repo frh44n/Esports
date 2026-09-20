@@ -340,6 +340,10 @@ class AppRepository(private val appDao: AppDao) {
         SupabaseClient.completeLudoTournament(whatsapp, tournamentId, score, isWinner)
     }
 
+    suspend fun exitLudoTournament(whatsapp: String, tournamentId: Int, score: Int, botName: String): Boolean = withContext(Dispatchers.IO) {
+        SupabaseClient.exitLudoTournament(whatsapp, tournamentId, score, botName)
+    }
+
     private fun prePopulateTournamentsOnline() {
         SupabaseClient.insertTournament(
             Tournament(

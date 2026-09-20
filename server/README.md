@@ -162,6 +162,10 @@ Your newly deployed server exposes the following endpoints:
 - `GET /api/admin/transactions` - **(Admin Only)** Retrieves all transaction requests across the entire platform.
 - `PATCH /api/transactions/:id/status` - **(Admin Only)** Approves or Rejects transaction requests. Approvals automatically update player balances.
 
+### 🎲 Ludo Tournament APIs:
+- `POST /api/ludo/complete` - Automatically distributes prize to the winning player's wallet, records game history with result/score/prize won, and automatically deletes the finished tournament from the database so players cannot replay it.
+- `POST /api/ludo/exit` - Handles mid-game exit/forfeit: automatically declares the BOT as winner, marks the user as Defeated with 0 prize distributed, logs the defeat in Game History, and automatically deletes the tournament from the server database.
+
 ### 🏆 Match Records & Game Histories:
 - `GET /api/users/:whatsapp/game-histories` - Retrieves game play history and prize claims for a user.
 - `GET /api/admin/game-histories` - **(Admin Only)** Retrieves all match lists and completion queues.

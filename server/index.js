@@ -2455,7 +2455,7 @@ app.post('/api/mines/cashout', async (req, res) => {
 // LUDO CLASSIC GAME ENDPOINTS
 // ==========================================
 
-// Automatically award prize to Ludo winner
+// Automatically award prize to Ludo winner and delete tournament
 app.post('/api/ludo/complete', async (req, res) => {
   try {
     const { whatsapp_number, tournament_id, score, is_winner } = req.body;
@@ -2513,23 +2513,137 @@ app.post('/api/ludo/complete', async (req, res) => {
         ]);
     }
 
-    // Record game history
-    const finalGameName = `Ludo Tournament|tourId:${tournament_id}|score:${score}|winner:${is_winner ? 'YES' : 'NO'}`;
-    await supabase
+    // Record game history: update existing PENDING entry or insert completed
+    const finalGameName = `Ludo Tournament - ${tournament.title || 'Classic'}|tourId:${tournament_id}|score:${score}|pos:${is_winner ? '1st (Winner)' : 'Defeated'}|winner:${is_winner ? 'YES' : 'NO'}`;
+    const { data: existingHist } = await supabase
       .from('game_histories')
-      .insert([
-        {
-          whatsapp_number: whatsapp_number,
+      .select('id')
+      .eq('whatsapp_number', whatsapp_number)
+      .eq('status', 'PENDING')
+      .ilike('game_name', '%Ludo%')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingHist) {
+      await supabase
+        .from('game_histories')
+        .update({
           game_name: finalGameName,
           prize_won: prize > 0 ? prize : null,
-          status: 'COMPLETED',
-          timestamp: Date.now()
-        }
-      ]);
+          status: 'COMPLETED'
+        })
+        .eq('id', existingHist.id);
+    } else {
+      await supabase
+        .from('game_histories')
+        .insert([
+          {
+            whatsapp_number: whatsapp_number,
+            game_name: finalGameName,
+            prize_won: prize > 0 ? prize : null,
+            status: 'COMPLETED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
 
-    res.json({ success: true, prize_awarded: prize, is_winner });
+    // Automatically delete the tournament from server database after game finishes
+    try {
+      await supabase
+        .from('tournaments')
+        .delete()
+        .eq('id', tournament_id);
+      console.log(`Ludo tournament ${tournament_id} automatically deleted on game complete.`);
+    } catch (delErr) {
+      console.error(`Failed to delete tournament ${tournament_id} on complete:`, delErr);
+    }
+
+    res.json({ success: true, prize_awarded: prize, is_winner, tournament_deleted: true });
   } catch (error) {
     console.error("Error in ludo complete:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// User exits / forfeits in-between the game
+// Declares BOT winner, user as Defeated, distributes NO money, records in Game History, and deletes tournament
+app.post('/api/ludo/exit', async (req, res) => {
+  try {
+    const { whatsapp_number, tournament_id, score, bot_name } = req.body;
+    if (!whatsapp_number || !tournament_id) {
+      return res.status(400).json({ error: "whatsapp_number and tournament_id are required" });
+    }
+
+    const currentScore = parseInt(score, 10) || 0;
+    const winnerBot = bot_name || 'Bot';
+
+    // 1. Fetch tournament info (for title/record before deleting)
+    const { data: tournament } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('id', tournament_id)
+      .maybeSingle();
+
+    const tourTitle = tournament ? (tournament.title || 'Classic') : 'Match';
+
+    // 2. Record game history: User Defeated, BOT winner, prize = 0
+    const finalGameName = `Ludo Tournament - ${tourTitle}|tourId:${tournament_id}|score:${currentScore}|pos:Defeated (Exit - ${winnerBot} Won)|winner:NO`;
+
+    const { data: existingHist } = await supabase
+      .from('game_histories')
+      .select('id')
+      .eq('whatsapp_number', whatsapp_number)
+      .eq('status', 'PENDING')
+      .ilike('game_name', '%Ludo%')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingHist) {
+      await supabase
+        .from('game_histories')
+        .update({
+          game_name: finalGameName,
+          prize_won: null,
+          status: 'COMPLETED'
+        })
+        .eq('id', existingHist.id);
+    } else {
+      await supabase
+        .from('game_histories')
+        .insert([
+          {
+            whatsapp_number: whatsapp_number,
+            game_name: finalGameName,
+            prize_won: null,
+            status: 'COMPLETED',
+            timestamp: Date.now()
+          }
+        ]);
+    }
+
+    // 3. Delete the tournament from the database (server-side)
+    try {
+      await supabase
+        .from('tournaments')
+        .delete()
+        .eq('id', tournament_id);
+      console.log(`Ludo tournament ${tournament_id} automatically deleted on user exit.`);
+    } catch (delErr) {
+      console.error(`Failed to delete tournament ${tournament_id} on exit:`, delErr);
+    }
+
+    res.json({
+      success: true,
+      message: `User exited. BOT (${winnerBot}) declared winner. Tournament deleted.`,
+      is_winner: false,
+      prize_awarded: 0.0,
+      bot_winner: winnerBot,
+      tournament_deleted: true
+    });
+  } catch (error) {
+    console.error("Error in ludo exit:", error);
     res.status(500).json({ error: error.message });
   }
 });

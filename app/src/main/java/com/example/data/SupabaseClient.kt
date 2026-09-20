@@ -1319,6 +1319,30 @@ object SupabaseClient {
         }
     }
 
+    fun exitLudoTournament(whatsapp: String, tournamentId: Int, score: Int, botName: String): Boolean {
+        val url = "${getServerUrl()}/api/ludo/exit"
+        val bodyJson = JSONObject().apply {
+            put("whatsapp_number", whatsapp)
+            put("tournament_id", tournamentId)
+            put("score", score)
+            put("bot_name", botName)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "exitLudoTournament error", e)
+            false
+        }
+    }
+
     private fun parseError(bodyStr: String): String? {
         return try {
             val obj = JSONObject(bodyStr)

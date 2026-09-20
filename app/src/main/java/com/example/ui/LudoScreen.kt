@@ -785,6 +785,8 @@ fun LudoGameManager(
     var finalScore by remember { mutableIntStateOf(0) }
     var userWonMatch by remember { mutableStateOf(false) }
     var showExitConfirmDialog by remember { mutableStateOf(false) }
+    var currentBotName by remember { mutableStateOf("Bot") }
+    var currentPlayerScore by remember { mutableIntStateOf(0) }
 
     BackHandler {
         if (gameState == "finished") {
@@ -798,15 +800,21 @@ fun LudoGameManager(
         AlertDialog(
             onDismissRequest = { showExitConfirmDialog = false },
             title = { Text("Quit Match?", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = { Text("Leaving the match will forfeit the game. Are you sure you want to exit?", color = Color.LightGray) },
+            text = { Text("Leaving the match will forfeit the game. The BOT will be declared winner, and the tournament will be removed. Are you sure?", color = Color.LightGray) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showExitConfirmDialog = false
-                        onBack()
+                        // Notify server: BOT declared winner, user Defeated, tournament deleted from database
+                        viewModel.exitLudoGame(
+                            tournamentId = tournament.id,
+                            score = currentPlayerScore,
+                            botName = currentBotName,
+                            onExitComplete = { onBack() }
+                        )
                     }
                 ) {
-                    Text("Leave", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                    Text("Leave & Forfeit", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -824,6 +832,11 @@ fun LudoGameManager(
             LudoGamePlayScreen(
                 viewModel = viewModel,
                 tournament = tournament,
+                onRequestExit = { score, botName ->
+                    currentPlayerScore = score
+                    currentBotName = botName
+                    showExitConfirmDialog = true
+                },
                 onGameFinished = { score, isWinner ->
                     finalScore = score
                     userWonMatch = isWinner
@@ -847,6 +860,7 @@ fun LudoGameManager(
 fun LudoGamePlayScreen(
     viewModel: MainViewModel,
     tournament: Tournament,
+    onRequestExit: (score: Int, botName: String) -> Unit = { _, _ -> },
     onGameFinished: (Int, Boolean) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -1417,14 +1431,33 @@ fun LudoGamePlayScreen(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("YOU (BLUE)", color = LudoBlue, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        Text("$p1Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("YOU (BLUE)", color = LudoBlue, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("$p1Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${botName.uppercase()} (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("$p2Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("${botName.uppercase()} (GREEN)", color = LudoGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        Text("$p2Points pts", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+
+                    IconButton(
+                        onClick = { onRequestExit(p1Points, botName) },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color(0xFF2A1520), RoundedCornerShape(8.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Quit Match",
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }

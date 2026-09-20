@@ -2082,12 +2082,22 @@ fun GameHistorySection(viewModel: MainViewModel) {
                                         fontWeight = FontWeight.Bold
                                     )
                                 } else {
-                                    Text(
-                                        text = "+ ₹${history.prizeWon ?: 0.0}",
-                                        fontSize = 15.sp,
-                                        color = EmeraldGlow,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
+                                    val prize = history.prizeWon ?: 0.0
+                                    if (prize > 0.0) {
+                                        Text(
+                                            text = "+ ₹$prize",
+                                            fontSize = 15.sp,
+                                            color = EmeraldGlow,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "₹0.00",
+                                            fontSize = 14.sp,
+                                            color = if (position?.contains("Defeated", ignoreCase = true) == true) Color(0xFFFF5252) else Color.Gray,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
                                 }
                             }
 

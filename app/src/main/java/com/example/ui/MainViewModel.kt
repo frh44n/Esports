@@ -1308,29 +1308,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (prizeAwarded > 0.0) {
                         _toastMessage.value = "🏆 Congratulations! You won ₹${"%.2f".format(prizeAwarded)}!"
                     } else {
-                        _toastMessage.value = "Ludo match completed successfully! Score: $score"
+                        _toastMessage.value = "Ludo match completed! Score: $score"
                     }
                 } else {
                     _toastMessage.value = "Game completed! Score: $score"
                 }
 
-                // USER REQUIREMENT:
-                // Delete the tournament when that tournament has been finished / result declared,
-                // so nobody can register that tournament and registered players cannot play it again.
-                try {
-                    repository.deleteTournament(tournamentId)
-                    _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
-                } catch (e: Exception) {
-                    Log.e("MainViewModel", "Error deleting tournament after finish", e)
-                }
+                // Ensure local tournament state is cleared immediately (server also deletes it automatically)
+                _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
 
                 refreshOnlineData(silent = true)
                 onComplete(prizeAwarded ?: 0.0)
             } catch (e: Exception) {
                 _toastMessage.value = "Error completing ludo game: ${e.message}"
-                // Ensure local list also removes the finished tournament
                 _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
                 onComplete(0.0)
+            }
+        }
+    }
+
+    fun exitLudoGame(tournamentId: Int, score: Int, botName: String, onExitComplete: () -> Unit) {
+        val user = loggedInUser.value
+        // Immediately remove tournament from local state so user can't re-enter
+        _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
+
+        if (user == null) {
+            onExitComplete()
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                // Inform server of forfeit: Server declares BOT winner, user Defeated, deletes tournament, updates history
+                repository.exitLudoTournament(user.whatsappNumber, tournamentId, score, botName)
+                _toastMessage.value = "Match forfeited. $botName declared winner."
+                refreshOnlineData(silent = true)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error exiting ludo game on server", e)
+            } finally {
+                onExitComplete()
             }
         }
     }
