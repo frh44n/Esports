@@ -539,7 +539,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadCachedCasinoGames(): List<com.example.data.CasinoGame> {
         return try {
             val prefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
-            val ludoPoster = prefs.getString("cached_ludo_poster", null) ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80"
+            val ludoPoster = prefs.getString("cached_ludo_poster", null) ?: "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png"
             val ludoName = prefs.getString("cached_ludo_name", "Ludo Classic") ?: "Ludo Classic"
             val minesPoster = prefs.getString("cached_mines_poster", null) ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80"
             val minesName = prefs.getString("cached_mines_name", "Mines Sweeper") ?: "Mines Sweeper"

@@ -1677,7 +1677,7 @@ fun CasinoSection(viewModel: MainViewModel) {
         casinoGames.firstOrNull { it.name.lowercase().contains("mines") }
     }
 
-    val ludoPoster = ludoGame?.posterUrl?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80"
+    val ludoPoster = ludoGame?.posterUrl?.trim()?.ifBlank { null } ?: "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png"
     val ludoName = ludoGame?.name ?: "Ludo Classic"
 
     val minesPoster = minesGame?.posterUrl?.trim()?.ifBlank { null } ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80"
@@ -3435,8 +3435,6 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                     if (url != null) {
                                         posterUrl = url
                                         viewModel.showToast("Poster uploaded successfully!")
-                                    } else {
-                                        viewModel.showToast("Upload failed. Please try again.")
                                     }
                                 }
                             } else {
@@ -5025,14 +5023,13 @@ fun RecordCard(title: String, value: String, modifier: Modifier = Modifier, colo
 fun uriToBase64(context: android.content.Context, uri: android.net.Uri, maxDimension: Int = 1280): Pair<String, String>? {
     return try {
         val contentResolver = context.contentResolver
+        val rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
 
         // 1. First probe dimensions to calculate optimal inSampleSize
         val boundsOptions = android.graphics.BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
-        contentResolver.openInputStream(uri)?.use { stream ->
-            android.graphics.BitmapFactory.decodeStream(stream, null, boundsOptions)
-        }
+        android.graphics.BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, boundsOptions)
 
         // 2. Compute sample size to avoid allocating excessive memory
         var inSampleSize = 1
@@ -5048,9 +5045,7 @@ fun uriToBase64(context: android.content.Context, uri: android.net.Uri, maxDimen
             inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
         }
 
-        val decodedBitmap = contentResolver.openInputStream(uri)?.use { stream ->
-            android.graphics.BitmapFactory.decodeStream(stream, null, decodeOptions)
-        }
+        val decodedBitmap = android.graphics.BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOptions)
 
         if (decodedBitmap != null) {
             val width = decodedBitmap.width
@@ -5074,15 +5069,9 @@ fun uriToBase64(context: android.content.Context, uri: android.net.Uri, maxDimen
             val base64 = android.util.Base64.encodeToString(compressedBytes, android.util.Base64.NO_WRAP)
             base64 to "image/jpeg"
         } else {
-            // Fallback: read stream directly if small enough (< 4MB)
-            val rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            if (rawBytes != null && rawBytes.size < 4 * 1024 * 1024) {
-                val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
-                val base64 = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP)
-                base64 to mimeType
-            } else {
-                null
-            }
+            // Fallback: encode raw bytes directly
+            val base64 = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP)
+            base64 to "image/jpeg"
         }
     } catch (e: Exception) {
         android.util.Log.e("uriToBase64", "Error processing image", e)
@@ -5396,7 +5385,7 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
 
     // Form fields specific to 1v1 Ludo
     var title by remember { mutableStateOf("") }
-    var posterUrl by remember { mutableStateOf("https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80") }
+    var posterUrl by remember { mutableStateOf("https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png") }
     var entryFee by remember { mutableStateOf("") }
     var winnerPrize by remember { mutableStateOf("") }
     var startTime by remember { mutableStateOf("") }
@@ -5420,8 +5409,6 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
                     if (url != null) {
                         posterUrl = url
                         viewModel.showToast("Custom poster uploaded successfully!")
-                    } else {
-                        viewModel.showToast("Upload failed. Please verify network or try again.")
                     }
                 }
             } else {
@@ -5459,7 +5446,7 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
                     editingTourId = null
                     if (createMode) {
                         title = ""
-                        posterUrl = "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80"
+                        posterUrl = "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png"
                         entryFee = ""
                         winnerPrize = ""
                         startTime = ""
@@ -5575,28 +5562,39 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
                         // Preset high-resolution options
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            OutlinedButton(
+                                onClick = { posterUrl = "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png" },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                border = if (posterUrl == "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png") BorderStroke(1.dp, PurpleGlow) else BorderStroke(1.dp, BorderColor)
+                            ) {
+                                Text("🔥 Ludo Pro", fontSize = 9.sp, color = if (posterUrl == "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png") PurpleGlow else Color.White, maxLines = 1)
+                            }
                             OutlinedButton(
                                 onClick = { posterUrl = "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80" },
                                 modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                border = if (posterUrl == "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80") BorderStroke(1.dp, PurpleGlow) else BorderStroke(1.dp, BorderColor)
                             ) {
-                                Text("Classic", fontSize = 10.sp, color = Color.White)
+                                Text("Classic", fontSize = 9.sp, color = Color.White, maxLines = 1)
                             }
                             OutlinedButton(
                                 onClick = { posterUrl = "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80" },
                                 modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                border = if (posterUrl == "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80") BorderStroke(1.dp, PurpleGlow) else BorderStroke(1.dp, BorderColor)
                             ) {
-                                Text("Neon Battle", fontSize = 10.sp, color = Color.White)
+                                Text("Neon", fontSize = 9.sp, color = Color.White, maxLines = 1)
                             }
                             OutlinedButton(
                                 onClick = { posterUrl = "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=600&q=80" },
                                 modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
+                                border = if (posterUrl == "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=600&q=80") BorderStroke(1.dp, PurpleGlow) else BorderStroke(1.dp, BorderColor)
                             ) {
-                                Text("Royal Gold", fontSize = 10.sp, color = Color.White)
+                                Text("Royal", fontSize = 9.sp, color = Color.White, maxLines = 1)
                             }
                         }
 
@@ -5667,7 +5665,7 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
                                 }
                                 val fee = entryFee.toDoubleOrNull() ?: 0.0
                                 val prize = winnerPrize.toDoubleOrNull() ?: 0.0
-                                val finalPoster = posterUrl.ifBlank { "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80" }
+                                val finalPoster = posterUrl.ifBlank { "https://ppgpqoeqjmyfgfncoorg.supabase.co/storage/v1/object/public/esports_images/ludo_preset_banner.png" }
 
                                 val customRankPrizesStr = "\n\n--- Custom Rank Prizes ---\n" +
                                         "1st: $prize\n" +
