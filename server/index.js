@@ -11,23 +11,44 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// Initialize Supabase Client
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
+const hasServiceRoleKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY);
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("CRITICAL ERROR: SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY is missing in environment variables!");
+  process.exit(1);
+}
+
+// Service role key is used to bypass RLS policies and handle transactions securely on the backend
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
+
 // Helper: Ensure Supabase Storage Bucket Exists
+let bucketChecked = false;
 async function ensureBucketExists() {
+  if (bucketChecked) return;
   try {
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-    if (listError) throw listError;
-    const exists = buckets.some(b => b.name === 'esports_images');
-    if (!exists) {
-      const { data, error } = await supabase.storage.createBucket('esports_images', {
-        public: true,
-        fileSizeLimit: 5242880, // 5MB
-        allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp']
-      });
-      if (error) {
-        console.error("Error creating bucket esports_images:", error);
-      } else {
-        console.log("Bucket 'esports_images' created successfully.");
+    if (!listError && buckets) {
+      const exists = buckets.some(b => b.name === 'esports_images');
+      if (!exists) {
+        const { data, error } = await supabase.storage.createBucket('esports_images', {
+          public: true,
+          fileSizeLimit: 10485760 // 10MB
+        });
+        if (error) {
+          console.error("Error creating bucket esports_images:", error);
+        } else {
+          console.log("Bucket 'esports_images' created successfully.");
+        }
       }
+      bucketChecked = true;
     }
   } catch (err) {
     console.error("ensureBucketExists error:", err);
@@ -72,25 +93,6 @@ app.post('/api/upload', async (req, res) => {
   } catch (err) {
     console.error("Upload handler error:", err);
     res.status(500).json({ error: err.message });
-  }
-});
-
-
-// Initialize Supabase Client
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
-const hasServiceRoleKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY);
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("CRITICAL ERROR: SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY is missing in environment variables!");
-  process.exit(1);
-}
-
-// Service role key is used to bypass RLS policies and handle transactions securely on the backend
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false
   }
 });
 
@@ -1205,42 +1207,197 @@ app.patch('/api/admin/game-histories/:id/status', async (req, res) => {
 
 
 // ==========================================
-// CONFIGURATION MANAGEMENT
+// CONFIGURATION MANAGEMENT & PERSISTENCE
 // ==========================================
 const fs = require('fs');
 const path = require('path');
 const configFilePath = path.join(__dirname, 'app_settings.json');
 const oldUpiFilePath = path.join(__dirname, 'upi_settings.json');
+const casinoGamesFilePath = path.join(__dirname, 'casino_games.json');
 
-function getGlobalSettings() {
-  let settings = {
-    upi_id: "pay.arenaesports@upi",
-    wa_url: "https://wa.me/919999999999",
-    tg_url: "https://t.me/arenaesportssupport",
-    referral_reward: 50.0,
-    referral_min_deposit: 20.0,
-    mines_house_edge: 97.0
-  };
+let cachedSettings = {
+  upi_id: "pay.arenaesports@upi",
+  wa_url: "https://wa.me/919999999999",
+  tg_url: "https://t.me/arenaesportssupport",
+  referral_reward: 50.0,
+  referral_min_deposit: 20.0,
+  mines_house_edge: 97.0
+};
+
+let cachedCasinoGames = [
+  {
+    id: 1,
+    name: "Ludo Classic",
+    poster_url: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80",
+    is_active: true
+  },
+  {
+    id: 2,
+    name: "Mines Sweeper",
+    poster_url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+    is_active: true
+  }
+];
+
+// Initial load from local disk if available
+try {
+  if (fs.existsSync(configFilePath)) {
+    const fileData = fs.readFileSync(configFilePath, 'utf8');
+    cachedSettings = { ...cachedSettings, ...JSON.parse(fileData) };
+  } else if (fs.existsSync(oldUpiFilePath)) {
+    const fileData = fs.readFileSync(oldUpiFilePath, 'utf8');
+    const config = JSON.parse(fileData);
+    if (config.upi_id) cachedSettings.upi_id = config.upi_id;
+  }
+} catch (e) {
+  console.error("Error reading local settings file:", e);
+}
+
+try {
+  if (fs.existsSync(casinoGamesFilePath)) {
+    const fileData = fs.readFileSync(casinoGamesFilePath, 'utf8');
+    const games = JSON.parse(fileData);
+    if (Array.isArray(games) && games.length > 0) {
+      cachedCasinoGames = games;
+    }
+  }
+} catch (e) {
+  console.error("Error reading local casino games file:", e);
+}
+
+// Cloud Persistence Helpers (saves to Supabase Storage & DB so stateless server restarts never lose changes)
+async function saveSettingsToCloud(settings) {
   try {
-    if (fs.existsSync(configFilePath)) {
-      const fileData = fs.readFileSync(configFilePath, 'utf8');
-      settings = { ...settings, ...JSON.parse(fileData) };
-    } else if (fs.existsSync(oldUpiFilePath)) {
-      const fileData = fs.readFileSync(oldUpiFilePath, 'utf8');
-      const config = JSON.parse(fileData);
-      if (config.upi_id) settings.upi_id = config.upi_id;
+    await ensureBucketExists();
+    const buffer = Buffer.from(JSON.stringify(settings, null, 2), 'utf8');
+    await supabase.storage
+      .from('esports_images')
+      .upload('system_config/app_settings.json', buffer, {
+        contentType: 'application/json',
+        upsert: true
+      });
+    console.log("Settings successfully persisted to Supabase Storage.");
+  } catch (err) {
+    console.warn("Could not persist settings to cloud storage:", err.message);
+  }
+
+  // Also attempt to upsert to app_settings DB table
+  try {
+    await supabase.from('app_settings').upsert({
+      id: 1,
+      settings: settings,
+      mines_house_edge: settings.mines_house_edge,
+      upi_id: settings.upi_id,
+      wa_url: settings.wa_url,
+      tg_url: settings.tg_url,
+      updated_at: new Date().toISOString()
+    });
+  } catch (e) {
+    // Ignore DB table if table hasn't been created yet; storage bucket keeps it persistent
+  }
+}
+
+async function saveCasinoGamesToCloud(games) {
+  try {
+    await ensureBucketExists();
+    const buffer = Buffer.from(JSON.stringify(games, null, 2), 'utf8');
+    await supabase.storage
+      .from('esports_images')
+      .upload('system_config/casino_games.json', buffer, {
+        contentType: 'application/json',
+        upsert: true
+      });
+    console.log("Casino games successfully persisted to Supabase Storage.");
+  } catch (err) {
+    console.warn("Could not persist casino games to cloud storage:", err.message);
+  }
+
+  // Also attempt to upsert into casino_games DB table
+  try {
+    for (const g of games) {
+      await supabase.from('casino_games').upsert({
+        id: g.id,
+        name: g.name,
+        poster_url: g.poster_url,
+        is_active: g.is_active !== undefined ? g.is_active : true
+      });
     }
   } catch (e) {
-    console.error("Error reading settings:", e);
+    // Ignore DB table if table doesn't exist
   }
-  return settings;
+}
+
+async function syncFromSupabaseCloud() {
+  try {
+    await ensureBucketExists();
+
+    // 1. Restore Persistent Settings from Supabase Storage
+    try {
+      const { data: settingsBlob, error: setDownloadErr } = await supabase.storage
+        .from('esports_images')
+        .download('system_config/app_settings.json');
+
+      if (!setDownloadErr && settingsBlob) {
+        const text = await settingsBlob.text();
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          cachedSettings = { ...cachedSettings, ...parsed };
+          fs.writeFileSync(configFilePath, JSON.stringify(cachedSettings, null, 2), 'utf8');
+          console.log("Restored persistent settings from Supabase Cloud:", cachedSettings);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not download cloud settings:", err.message);
+    }
+
+    // 2. Restore Persistent Casino Games (Ludo and Mines Posters) from Supabase Storage
+    try {
+      const { data: gamesBlob, error: gamesDownloadErr } = await supabase.storage
+        .from('esports_images')
+        .download('system_config/casino_games.json');
+
+      if (!gamesDownloadErr && gamesBlob) {
+        const text = await gamesBlob.text();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          cachedCasinoGames = parsed;
+          fs.writeFileSync(casinoGamesFilePath, JSON.stringify(cachedCasinoGames, null, 2), 'utf8');
+          console.log("Restored persistent casino games from Supabase Cloud:", cachedCasinoGames);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not download cloud casino games:", err.message);
+    }
+
+    // 3. Check Supabase DB tables as well
+    try {
+      const { data: dbGames, error: dbGamesErr } = await supabase.from('casino_games').select('*');
+      if (!dbGamesErr && Array.isArray(dbGames) && dbGames.length > 0) {
+        cachedCasinoGames = dbGames.map(g => ({
+          id: g.id,
+          name: g.name,
+          poster_url: g.poster_url,
+          is_active: g.is_active !== undefined ? g.is_active : true
+        }));
+        fs.writeFileSync(casinoGamesFilePath, JSON.stringify(cachedCasinoGames, null, 2), 'utf8');
+      }
+    } catch (e) {
+      // Ignored
+    }
+  } catch (err) {
+    console.error("syncFromSupabaseCloud failed:", err);
+  }
+}
+
+function getGlobalSettings() {
+  return cachedSettings;
 }
 
 function saveGlobalSettings(newSettings) {
   try {
-    const settings = getGlobalSettings();
-    const updatedSettings = { ...settings, ...newSettings };
-    fs.writeFileSync(configFilePath, JSON.stringify(updatedSettings), 'utf8');
+    cachedSettings = { ...cachedSettings, ...newSettings };
+    fs.writeFileSync(configFilePath, JSON.stringify(cachedSettings, null, 2), 'utf8');
+    saveSettingsToCloud(cachedSettings).catch(e => console.error("Background cloud save error:", e));
     return true;
   } catch (e) {
     console.error("Error writing settings:", e);
@@ -1248,40 +1405,15 @@ function saveGlobalSettings(newSettings) {
   }
 }
 
-const casinoGamesFilePath = path.join(__dirname, 'casino_games.json');
-
 function getCasinoGames() {
-  const defaultGames = [
-    {
-      id: 1,
-      name: "Ludo Classic",
-      poster_url: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80",
-      is_active: true
-    },
-    {
-      id: 2,
-      name: "Mines Sweeper",
-      poster_url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
-      is_active: true
-    }
-  ];
-  try {
-    if (fs.existsSync(casinoGamesFilePath)) {
-      const fileData = fs.readFileSync(casinoGamesFilePath, 'utf8');
-      return JSON.parse(fileData);
-    } else {
-      fs.writeFileSync(casinoGamesFilePath, JSON.stringify(defaultGames), 'utf8');
-      return defaultGames;
-    }
-  } catch (e) {
-    console.error("Error reading casino games:", e);
-    return defaultGames;
-  }
+  return cachedCasinoGames;
 }
 
 function saveCasinoGamesList(games) {
   try {
-    fs.writeFileSync(casinoGamesFilePath, JSON.stringify(games), 'utf8');
+    cachedCasinoGames = games;
+    fs.writeFileSync(casinoGamesFilePath, JSON.stringify(games, null, 2), 'utf8');
+    saveCasinoGamesToCloud(games).catch(e => console.error("Background casino games cloud save error:", e));
     return true;
   } catch (e) {
     console.error("Error writing casino games:", e);
@@ -2368,9 +2500,14 @@ app.post('/api/ludo/complete', async (req, res) => {
 
 
 // Start Server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`=================================================`);
   console.log(`Gamer Tournament Server running on port ${PORT}`);
   console.log(`URL: http://localhost:${PORT}`);
   console.log(`=================================================`);
+  try {
+    await syncFromSupabaseCloud();
+  } catch (err) {
+    console.error("Initial syncFromSupabaseCloud error:", err);
+  }
 });

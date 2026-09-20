@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -124,6 +125,10 @@ fun AppUi(viewModel: MainViewModel) {
                 .imePadding()
                 .background(DarkBg)
         ) {
+            BackHandler(enabled = currentScreen in listOf("admin", "history", "referral_details", "ludo_tournaments")) {
+                viewModel.setScreen("home")
+            }
+
             when (currentScreen) {
                 "splash" -> SplashScreen()
                 "auth" -> AuthScreen(viewModel)
@@ -215,6 +220,22 @@ fun AuthScreen(viewModel: MainViewModel) {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
 
     var isSignUp by remember { mutableStateOf(false) } // false = Login, true = SignUp
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+
+    BackHandler {
+        if (isSignUp) {
+            isSignUp = false
+        } else {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastBackPressTime < 2000L) {
+                (context as? android.app.Activity)?.finish()
+            } else {
+                lastBackPressTime = currentTime
+                android.widget.Toast.makeText(context, "Press back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     var whatsapp by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -494,6 +515,31 @@ fun HomeScreen(viewModel: MainViewModel) {
     val unreadCount = notifications.count { !it.isRead }
     var showNotificationCenter by remember { mutableStateOf(false) }
     val showMinesGame by viewModel.showMinesGame.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+
+    BackHandler {
+        when {
+            showNotificationCenter -> {
+                showNotificationCenter = false
+            }
+            showMinesGame -> {
+                viewModel.setShowMinesGame(false)
+            }
+            selectedTab != 0 -> {
+                selectedTab = 0
+            }
+            else -> {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastBackPressTime < 2000L) {
+                    (context as? android.app.Activity)?.finish()
+                } else {
+                    lastBackPressTime = currentTime
+                    android.widget.Toast.makeText(context, "Press back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // App Top Bar
@@ -827,6 +873,11 @@ fun EsportsSection(viewModel: MainViewModel) {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     var selectedTournamentForReg by remember { mutableStateOf<Tournament?>(null) }
     var selectedTournamentForInfo by remember { mutableStateOf<Tournament?>(null) }
+
+    BackHandler(enabled = selectedTournamentForReg != null || selectedTournamentForInfo != null) {
+        selectedTournamentForReg = null
+        selectedTournamentForInfo = null
+    }
 
     // Check if the user is registered for ANY tournament
     val registeredTournaments = tournaments.filter { it.isJoined && !it.startTime.contains("[FINISHED]") }
@@ -1607,6 +1658,10 @@ fun CasinoSection(viewModel: MainViewModel) {
     val casinoGames by viewModel.casinoGames.collectAsStateWithLifecycle()
     var selectedCasinoTour by remember { mutableStateOf<Tournament?>(null) }
 
+    BackHandler(enabled = selectedCasinoTour != null) {
+        selectedCasinoTour = null
+    }
+
     // Filter tournaments created specifically as "Casino" game type (case-insensitive)
     val dbCasinoGames = remember(tournaments) {
         tournaments.filter {
@@ -2223,6 +2278,10 @@ fun MenuSection(viewModel: MainViewModel) {
 
     var expandedSection by remember { mutableStateOf<String?>(null) }
 
+    BackHandler(enabled = expandedSection != null) {
+        expandedSection = null
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -2721,10 +2780,16 @@ fun MenuSection(viewModel: MainViewModel) {
                             onClick = { uriHandler.openUri(globalSettings.waUrl) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                         ) {
-                            Icon(Icons.Default.SupportAgent, contentDescription = "WhatsApp")
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_whatsapp),
+                                contentDescription = "WhatsApp",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("WhatsApp", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
 
@@ -2732,10 +2797,16 @@ fun MenuSection(viewModel: MainViewModel) {
                             onClick = { uriHandler.openUri(globalSettings.tgUrl) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0088CC)),
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Telegram")
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_telegram),
+                                contentDescription = "Telegram",
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("Telegram", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
@@ -2844,6 +2915,14 @@ fun MenuAccordionItem(
 @Composable
 fun AdminPanelScreen(viewModel: MainViewModel) {
     var adminSection by remember { mutableIntStateOf(0) } // 0: Deposits, 1: Withdrawals, 2: Settings, 3: Users, 4: Tournaments, 5: Teams & Rewards, 6: Tour Search
+
+    BackHandler {
+        if (adminSection != 0) {
+            adminSection = 0
+        } else {
+            viewModel.setScreen("home")
+        }
+    }
     val transactions by viewModel.allTransactionsAdmin.collectAsStateWithLifecycle()
     val tournaments by viewModel.allTournaments.collectAsStateWithLifecycle()
     val searchedUser by viewModel.searchedUser.collectAsStateWithLifecycle()
@@ -3340,22 +3419,28 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                     var startTime by remember { mutableStateOf("") }
                     var extraPrizesList by remember { mutableStateOf(listOf<Pair<String, String>>()) }
                     var matchType by remember { mutableStateOf("Squad") }
+                    var isUploadingPoster by remember { mutableStateOf(false) }
 
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val posterPicker = androidx.activity.compose.rememberLauncherForActivityResult(
                         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
                     ) { uri ->
                         uri?.let {
+                            isUploadingPoster = true
+                            viewModel.showToast("Compressing & uploading poster...")
                             val helper = uriToBase64(context, it)
                             if (helper != null) {
-                                viewModel.showToast("Uploading poster image to Supabase...")
                                 viewModel.uploadPhoto(helper.first, "poster_${System.currentTimeMillis()}.jpg", helper.second) { url ->
+                                    isUploadingPoster = false
                                     if (url != null) {
                                         posterUrl = url
                                         viewModel.showToast("Poster uploaded successfully!")
+                                    } else {
+                                        viewModel.showToast("Upload failed. Please try again.")
                                     }
                                 }
                             } else {
+                                isUploadingPoster = false
                                 viewModel.showToast("Failed to process picked image.")
                             }
                         }
@@ -3464,13 +3549,20 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
 
                                 Button(
                                     onClick = { posterPicker.launch("image/*") },
+                                    enabled = !isUploadingPoster,
                                     colors = ButtonDefaults.buttonColors(containerColor = CyanGlow.copy(alpha = 0.15f), contentColor = CyanGlow),
                                     border = BorderStroke(1.dp, CyanGlow),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(Icons.Default.Image, contentDescription = "Upload Poster", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Upload Poster from Device", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    if (isUploadingPoster) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyanGlow, strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Uploading Poster...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    } else {
+                                        Icon(Icons.Default.Image, contentDescription = "Upload Poster", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("📸 Upload Poster from Device", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
 
 
@@ -4239,7 +4331,8 @@ fun AdminPanelScreen(viewModel: MainViewModel) {
                                                                 position = declarePositionText,
                                                                 prizeAmount = prize,
                                                                 rawWhatsapp = rawWhatsapp,
-                                                                tournamentTitle = tour.title
+                                                                tournamentTitle = tour.title,
+                                                                tournamentId = tour.id
                                                             )
                                                             declarePrizeText = ""
                                                         },
@@ -4659,6 +4752,9 @@ fun AdminCasinoGamesScreen(viewModel: MainViewModel) {
 
 @Composable
 fun HistoryScreen(viewModel: MainViewModel) {
+    BackHandler {
+        viewModel.setScreen("home")
+    }
     val personalTx by viewModel.personalTransactions.collectAsStateWithLifecycle()
     var currentPage by remember { mutableIntStateOf(0) }
     val pageSize = 10
@@ -4926,19 +5022,70 @@ fun RecordCard(title: String, value: String, modifier: Modifier = Modifier, colo
     }
 }
 
-fun uriToBase64(context: android.content.Context, uri: android.net.Uri): Pair<String, String>? {
+fun uriToBase64(context: android.content.Context, uri: android.net.Uri, maxDimension: Int = 1280): Pair<String, String>? {
     return try {
         val contentResolver = context.contentResolver
-        val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
-        val inputStream = contentResolver.openInputStream(uri)
-        val bytes = inputStream?.readBytes()
-        inputStream?.close()
-        if (bytes != null) {
-            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            base64 to mimeType
-        } else null
-    } catch (e: java.lang.Exception) {
-        e.printStackTrace()
+
+        // 1. First probe dimensions to calculate optimal inSampleSize
+        val boundsOptions = android.graphics.BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        contentResolver.openInputStream(uri)?.use { stream ->
+            android.graphics.BitmapFactory.decodeStream(stream, null, boundsOptions)
+        }
+
+        // 2. Compute sample size to avoid allocating excessive memory
+        var inSampleSize = 1
+        val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+        if (maxDim > maxDimension) {
+            while ((maxDim / (inSampleSize * 2)) >= maxDimension) {
+                inSampleSize *= 2
+            }
+        }
+
+        val decodeOptions = android.graphics.BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+
+        val decodedBitmap = contentResolver.openInputStream(uri)?.use { stream ->
+            android.graphics.BitmapFactory.decodeStream(stream, null, decodeOptions)
+        }
+
+        if (decodedBitmap != null) {
+            val width = decodedBitmap.width
+            val height = decodedBitmap.height
+            val scaledBitmap = if (width > maxDimension || height > maxDimension) {
+                val ratio = minOf(maxDimension.toFloat() / width, maxDimension.toFloat() / height)
+                val newWidth = (width * ratio).toInt().coerceAtLeast(1)
+                val newHeight = (height * ratio).toInt().coerceAtLeast(1)
+                android.graphics.Bitmap.createScaledBitmap(decodedBitmap, newWidth, newHeight, true).also {
+                    if (it != decodedBitmap) decodedBitmap.recycle()
+                }
+            } else {
+                decodedBitmap
+            }
+
+            val byteStream = java.io.ByteArrayOutputStream()
+            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, byteStream)
+            val compressedBytes = byteStream.toByteArray()
+            scaledBitmap.recycle()
+
+            val base64 = android.util.Base64.encodeToString(compressedBytes, android.util.Base64.NO_WRAP)
+            base64 to "image/jpeg"
+        } else {
+            // Fallback: read stream directly if small enough (< 4MB)
+            val rawBytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (rawBytes != null && rawBytes.size < 4 * 1024 * 1024) {
+                val mimeType = contentResolver.getType(uri) ?: "image/jpeg"
+                val base64 = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP)
+                base64 to mimeType
+            } else {
+                null
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("uriToBase64", "Error processing image", e)
         null
     }
 }
@@ -5011,6 +5158,9 @@ fun AdminBotsScreen(viewModel: MainViewModel) {
 
 @Composable
 fun ReferralDetailsScreen(viewModel: MainViewModel) {
+    BackHandler {
+        viewModel.setScreen("home")
+    }
     val user by viewModel.loggedInUser.collectAsStateWithLifecycle()
     val referredUsers by viewModel.referredUsers.collectAsStateWithLifecycle()
     val totalCount by viewModel.referredTotalCount.collectAsStateWithLifecycle()
@@ -5251,6 +5401,7 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
     var winnerPrize by remember { mutableStateOf("") }
     var startTime by remember { mutableStateOf("") }
     var rules by remember { mutableStateOf("1. 15 Minute Timed point battle.\n2. 1 point per cell moved.\n3. Capture opponent pawn: +50 points.\n4. Enter center / home: +100 points.\n5. Standard clockwise path movement.") }
+    var isUploadingPoster by remember { mutableStateOf(false) }
 
     val ludoTournaments = remember(tournaments) {
         tournaments.filter { it.game.equals("Ludo", ignoreCase = true) || it.game.lowercase().contains("ludo") }
@@ -5260,19 +5411,22 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
+            isUploadingPoster = true
+            viewModel.showToast("Compressing & uploading custom photo...")
             val helper = uriToBase64(context, it)
             if (helper != null) {
-                viewModel.showToast("Uploading poster image to Supabase...")
                 viewModel.uploadPhoto(helper.first, "ludo_poster_${System.currentTimeMillis()}.jpg", helper.second) { url ->
+                    isUploadingPoster = false
                     if (url != null) {
                         posterUrl = url
-                        viewModel.showToast("Poster uploaded successfully!")
+                        viewModel.showToast("Custom poster uploaded successfully!")
                     } else {
-                        viewModel.showToast("Upload failed")
+                        viewModel.showToast("Upload failed. Please verify network or try again.")
                     }
                 }
             } else {
-                viewModel.showToast("Failed to process image.")
+                isUploadingPoster = false
+                viewModel.showToast("Failed to process picked image.")
             }
         }
     }
@@ -5402,13 +5556,48 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
 
                         Button(
                             onClick = { posterPicker.launch("image/*") },
+                            enabled = !isUploadingPoster,
                             colors = ButtonDefaults.buttonColors(containerColor = PurpleGlow.copy(alpha = 0.15f), contentColor = PurpleGlow),
                             border = BorderStroke(1.dp, PurpleGlow),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Image, contentDescription = "Upload Poster", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Upload Custom Ludo Poster", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            if (isUploadingPoster) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PurpleGlow, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading Custom Poster...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.Image, contentDescription = "Upload Poster", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("📸 Choose & Upload Custom Photo", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Preset high-resolution options
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { posterUrl = "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80" },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Text("Classic", fontSize = 10.sp, color = Color.White)
+                            }
+                            OutlinedButton(
+                                onClick = { posterUrl = "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80" },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Text("Neon Battle", fontSize = 10.sp, color = Color.White)
+                            }
+                            OutlinedButton(
+                                onClick = { posterUrl = "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=600&q=80" },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Text("Royal Gold", fontSize = 10.sp, color = Color.White)
+                            }
                         }
 
                         if (posterUrl.isNotBlank()) {
@@ -5425,6 +5614,18 @@ fun AdminLudoTournamentsScreen(viewModel: MainViewModel) {
                                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.65f),
+                                    shape = RoundedCornerShape(bottomStart = 8.dp),
+                                    modifier = Modifier.align(Alignment.TopEnd)
+                                ) {
+                                    Text(
+                                        text = "Active Poster Preview",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
 

@@ -1,14 +1,15 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
@@ -45,353 +46,474 @@ fun MinesGameScreen(
     var minesCount by remember { mutableIntStateOf(3) }
     var showHelpDialog by remember { mutableStateOf(false) }
 
+    val isGameActive = activeGame != null && activeGame!!.status == "ACTIVE"
+    val isGameFinished = activeGame != null && (activeGame!!.status == "LOST" || activeGame!!.status == "WON")
+
     LaunchedEffect(Unit) {
         viewModel.checkActiveMinesGame()
     }
 
+    // Direct play action: starts game immediately without needing to reset or click bet again
+    fun onPlayAgainOrBet() {
+        val bet = betAmountStr.toDoubleOrNull() ?: activeGame?.betAmount ?: 10.0
+        if (bet <= 0) {
+            viewModel.showToast("Enter a valid bet amount")
+            return
+        }
+        user?.let { u ->
+            val totalBal = u.depositBalance + u.withdrawalBalance
+            if (bet > totalBal) {
+                viewModel.showToast("Insufficient balance for ₹$bet")
+                return
+            }
+        }
+        val count = if (minesCount in 1..24) minesCount else (activeGame?.minesCount ?: 3)
+        viewModel.startMinesGame(bet, count)
+    }
+
+    BackHandler {
+        if (showHelpDialog) {
+            showHelpDialog = false
+        } else {
+            onBack()
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("STAKE MINES", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
+            // Compact Header Bar with Back, Title, Live Wallet balance pill, and Help
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
-                },
-                actions = {
-                    IconButton(onClick = { showHelpDialog = true }) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "STAKE MINES",
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Sleek wallet balance badge
+                    user?.let { u ->
+                        Surface(
+                            color = CardBg,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, BorderColor)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("₹", color = EmeraldGlow, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    String.format("%.2f", u.depositBalance + u.withdrawalBalance),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+
+                    IconButton(onClick = { showHelpDialog = true }, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Info, contentDescription = "Help", tint = CyanGlow)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
-            )
+                }
+            }
         },
         containerColor = DarkBg
     ) { padding ->
+        // Full screen non-scrolling layout: everything fits on screen at once!
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // User Balances Display
-            user?.let { u ->
+            // 1. Status & Multiplier strip
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF141A26))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isGameActive) {
+                    Text(
+                        "💎 ${activeGame!!.revealed.size} Gems Found",
+                        color = EmeraldGlow,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${String.format("%.2f", activeGame!!.multiplier)}x",
+                            color = AmberGlow,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Next: ${String.format("%.2f", activeGame!!.nextMultiplier)}x",
+                            color = CyanGlow,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else if (activeGame != null && activeGame!!.status == "LOST") {
+                    Text(
+                        "💥 Hit a Mine! (-₹${String.format("%.2f", activeGame!!.betAmount)})",
+                        color = RedGlow,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        "Tap Play Again below",
+                        color = Color.LightGray,
+                        fontSize = 11.sp
+                    )
+                } else if (activeGame != null && activeGame!!.status == "WON") {
+                    Text(
+                        "🎉 Won ₹${String.format("%.2f", activeGame!!.betAmount * activeGame!!.multiplier)}!",
+                        color = EmeraldGlow,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        "${String.format("%.2f", activeGame!!.multiplier)}x",
+                        color = AmberGlow,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    Text(
+                        "💣 $minesCount Mines  •  💎 ${25 - minesCount} Gems",
+                        color = Color.LightGray,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        "Start: 1.00x",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // 2. 5x5 Mines Grid Board (Responsive size that dynamically fits available space)
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val boardSize = minOf(maxWidth, maxHeight, 360.dp)
+                Box(
+                    modifier = Modifier
+                        .size(boardSize)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF0F212E))
+                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                        .padding(6.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (row in 0 until 5) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                for (col in 0 until 5) {
+                                    val tileIdx = row * 5 + col
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(
+                                                getTileBackgroundColor(
+                                                    tileIdx = tileIdx,
+                                                    activeGame = activeGame
+                                                )
+                                            )
+                                            .clickable(
+                                                enabled = isGameActive &&
+                                                        !activeGame!!.revealed.contains(tileIdx) &&
+                                                        !loading
+                                            ) {
+                                                MinesSoundPlayer.playClickSound()
+                                                viewModel.revealMinesTile(
+                                                    tileIndex = tileIdx,
+                                                    onGemRevealed = { MinesSoundPlayer.playGemSound() },
+                                                    onMineHit = { MinesSoundPlayer.playExplodeSound() },
+                                                    onAutoCashout = { MinesSoundPlayer.playCashoutSound() }
+                                                )
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        RenderTileContent(
+                                            tileIdx = tileIdx,
+                                            activeGame = activeGame
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Action Section: Primary Button & Compact Controls (Never offscreen!)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Primary Action Button (Cashout / Play Again / Bet)
+                if (isGameActive) {
+                    val winAmount = activeGame!!.betAmount * activeGame!!.multiplier
+                    Button(
+                        onClick = {
+                            viewModel.cashoutMinesGame {
+                                MinesSoundPlayer.playCashoutSound()
+                            }
+                        },
+                        enabled = !loading,
+                        colors = ButtonDefaults.buttonColors(containerColor = AmberGlow),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            "CASHOUT  ₹${String.format("%.2f", winAmount)} (${String.format("%.2f", activeGame!!.multiplier)}x)",
+                            color = DarkBg,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp
+                        )
+                    }
+                } else if (isGameFinished) {
+                    // USER REQUIREMENT: When a player losses they can play again by just clicking on button Play again, no need to click on Bet button again.
+                    Button(
+                        onClick = {
+                            MinesSoundPlayer.playClickSound()
+                            onPlayAgainOrBet()
+                        },
+                        enabled = !loading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (activeGame?.status == "LOST") EmeraldGlow else CyanGlow
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            if (loading) "Starting..." else "PLAY AGAIN (₹${betAmountStr})",
+                            color = DarkBg,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            MinesSoundPlayer.playClickSound()
+                            onPlayAgainOrBet()
+                        },
+                        enabled = !loading,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            if (loading) "Loading..." else "BET (₹${betAmountStr})",
+                            color = DarkBg,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+
+                // Compact Bet & Mines Controls Strip
                 Card(
                     colors = CardDefaults.cardColors(containerColor = CardBg),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, BorderColor)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text("Deposit Balance", color = Color.Gray, fontSize = 11.sp)
-                            Text("₹${String.format("%.2f", u.depositBalance)}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("Withdrawal Balance", color = Color.Gray, fontSize = 11.sp)
-                            Text("₹${String.format("%.2f", u.withdrawalBalance)}", color = EmeraldGlow, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // Game Board Title/Info
-            activeGame?.let { game ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Game Active", color = CyanGlow, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(
-                        "Multiplier: ${String.format("%.2f", game.multiplier)}x",
-                        color = AmberGlow,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-            } ?: run {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Place Your Bet", color = Color.Gray, fontSize = 13.sp)
-                    Text("Multiplier: 1.00x", color = Color.Gray, fontSize = 13.sp)
-                }
-            }
-
-            // 5x5 Grid Board (Matching the Stake visual theme)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF0F212E)) // dark board container background
-                    .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
-                    .padding(8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    for (row in 0 until 5) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            for (col in 0 until 5) {
-                                val tileIdx = row * 5 + col
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .aspectRatio(1f)
-                                        .padding(4.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            getTileBackgroundColor(
-                                                tileIdx = tileIdx,
-                                                activeGame = activeGame
-                                            )
-                                        )
-                                        .clickable(
-                                            enabled = activeGame != null &&
-                                                    activeGame?.status == "ACTIVE" &&
-                                                    !activeGame!!.revealed.contains(tileIdx) &&
-                                                    !loading
-                                        ) {
-                                            // Play tactile click sound instantly when pressed
-                                            MinesSoundPlayer.playClickSound()
-                                            viewModel.revealMinesTile(
-                                                tileIndex = tileIdx,
-                                                onGemRevealed = { MinesSoundPlayer.playGemSound() },
-                                                onMineHit = { MinesSoundPlayer.playExplodeSound() },
-                                                onAutoCashout = { MinesSoundPlayer.playCashoutSound() }
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    RenderTileContent(
-                                        tileIdx = tileIdx,
-                                        activeGame = activeGame
+                        // Bet Amount Column (Left)
+                        Column(modifier = Modifier.weight(1.2f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Bet (₹)", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        "1/2",
+                                        color = if (!isGameActive) Color.White else Color.DarkGray,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF263242))
+                                            .clickable(enabled = !isGameActive) {
+                                                val currentBet = betAmountStr.toDoubleOrNull() ?: 10.0
+                                                betAmountStr = String.format("%.0f", (currentBet / 2).coerceAtLeast(1.0))
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                    Text(
+                                        "2x",
+                                        color = if (!isGameActive) Color.White else Color.DarkGray,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF263242))
+                                            .clickable(enabled = !isGameActive) {
+                                                val currentBet = betAmountStr.toDoubleOrNull() ?: 10.0
+                                                betAmountStr = String.format("%.0f", currentBet * 2)
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                    Text(
+                                        "Max",
+                                        color = if (!isGameActive) CyanGlow else Color.DarkGray,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF263242))
+                                            .clickable(enabled = !isGameActive) {
+                                                user?.let { u ->
+                                                    val maxBet = u.depositBalance + u.withdrawalBalance
+                                                    betAmountStr = String.format("%.0f", maxBet)
+                                                }
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            // Next Tile Potential Info
-            activeGame?.let { game ->
-                if (game.status == "ACTIVE") {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2638)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Next Tile Value:", color = Color.White, fontSize = 12.sp)
-                            Text(
-                                "Multiplier: ${String.format("%.2f", game.nextMultiplier)}x  (₹${String.format("%.2f", game.betAmount * game.nextMultiplier)})",
-                                color = CyanGlow,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Controls Block
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardBg),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Primary Play/Cashout Button
-                    if (activeGame != null && activeGame!!.status == "ACTIVE") {
-                        // Cashout Button
-                        val winAmount = activeGame!!.betAmount * activeGame!!.multiplier
-                        Button(
-                            onClick = {
-                                viewModel.cashoutMinesGame {
-                                    MinesSoundPlayer.playCashoutSound()
-                                }
-                            },
-                            enabled = !loading,
-                            colors = ButtonDefaults.buttonColors(containerColor = AmberGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                "Cashout  ₹${String.format("%.2f", winAmount)} (${String.format("%.2f", activeGame!!.multiplier)}x)",
-                                color = DarkBg,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-                    } else if (activeGame != null && (activeGame!!.status == "WON" || activeGame!!.status == "LOST")) {
-                        // Reset session to start over
-                        Button(
-                            onClick = { viewModel.resetMinesSessionState() },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Play Again", color = DarkBg, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        // Bet Button
-                        Button(
-                            onClick = {
-                                val bet = betAmountStr.toDoubleOrNull() ?: 0.0
-                                if (bet <= 0) {
-                                    viewModel.showToast("Enter a valid bet amount")
-                                    return@Button
-                                }
-                                viewModel.startMinesGame(bet, minesCount)
-                            },
-                            enabled = !loading,
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                if (loading) "Loading..." else "Bet",
-                                color = DarkBg,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Bet Amount input
-                    Column {
-                        Text("Bet Amount (₹)", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
+                            Spacer(modifier = Modifier.height(3.dp))
+                            BasicTextField(
                                 value = betAmountStr,
-                                onValueChange = { if (activeGame == null) betAmountStr = it },
+                                onValueChange = { if (!isGameActive) betAmountStr = it },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
-                                enabled = activeGame == null,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = CyanGlow,
-                                    unfocusedBorderColor = BorderColor,
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    disabledBorderColor = BorderColor,
-                                    disabledTextColor = Color.Gray
+                                enabled = !isGameActive,
+                                textStyle = LocalTextStyle.current.copy(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
                                 ),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF0F1522))
+                                    .border(1.dp, if (!isGameActive) BorderColor else Color.Transparent, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
                             )
-
-                            // Quick adjustment buttons (disabled during active game)
-                            Button(
-                                onClick = {
-                                    val currentBet = betAmountStr.toDoubleOrNull() ?: 10.0
-                                    betAmountStr = String.format("%.2f", (currentBet / 2).coerceAtLeast(1.0))
-                                },
-                                enabled = activeGame == null,
-                                contentPadding = PaddingValues(horizontal = 10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("1/2", color = Color.White, fontSize = 11.sp)
-                            }
-
-                            Button(
-                                onClick = {
-                                    val currentBet = betAmountStr.toDoubleOrNull() ?: 10.0
-                                    betAmountStr = String.format("%.2f", currentBet * 2)
-                                },
-                                enabled = activeGame == null,
-                                contentPadding = PaddingValues(horizontal = 10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("2x", color = Color.White, fontSize = 11.sp)
-                            }
-
-                            Button(
-                                onClick = {
-                                    user?.let { u ->
-                                        val maxBet = u.depositBalance + u.withdrawalBalance
-                                        betAmountStr = String.format("%.2f", maxBet)
-                                    }
-                                },
-                                enabled = activeGame == null,
-                                contentPadding = PaddingValues(horizontal = 10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BorderColor),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Max", color = CyanGlow, fontSize = 11.sp)
-                            }
                         }
-                    }
 
-                    // Number of Mines selection
-                    if (activeGame == null) {
-                        Column {
+                        // Mines Stepper Column (Right)
+                        Column(
+                            modifier = Modifier.weight(0.9f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "Mines Count",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF0F1522))
+                                    .border(1.dp, if (!isGameActive) BorderColor else Color.Transparent, RoundedCornerShape(6.dp)),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Mines Count: $minesCount", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text("Gems Count: ${25 - minesCount}", color = Color.Gray, fontSize = 11.sp)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Slider(
-                                value = minesCount.toFloat(),
-                                onValueChange = { minesCount = it.toInt() },
-                                valueRange = 1f..24f,
-                                steps = 22,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = CyanGlow,
-                                    activeTrackColor = CyanGlow,
-                                    inactiveTrackColor = Color.DarkGray
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clickable(enabled = !isGameActive && minesCount > 1) {
+                                            minesCount--
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "-",
+                                        color = if (!isGameActive && minesCount > 1) CyanGlow else Color.DarkGray,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                }
+
+                                Text(
+                                    "$minesCount 💣",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
                                 )
-                            )
-                        }
-                    } else {
-                        // Display active mines count
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Active Mines: ${activeGame!!.minesCount}", color = Color.Gray, fontSize = 11.sp)
-                            Text("Remaining Gems: ${25 - activeGame!!.minesCount - activeGame!!.revealed.size}", color = Color.Gray, fontSize = 11.sp)
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clickable(enabled = !isGameActive && minesCount < 24) {
+                                            minesCount++
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "+",
+                                        color = if (!isGameActive && minesCount < 24) CyanGlow else Color.DarkGray,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -410,7 +532,8 @@ fun MinesGameScreen(
                             "3. Press Bet to begin.\n" +
                             "4. Click on the gray tiles to reveal what's hidden under them.\n" +
                             "5. If it's a GEM 💎, your multiplier increases! You can Cashout any time.\n" +
-                            "6. If you hit a MINE 💥, you lose the bet and the game ends.",
+                            "6. If you hit a MINE 💥, you lose the bet and the game ends.\n" +
+                            "7. Tap Play Again to immediately jump into the next round!",
                     color = Color.LightGray,
                     lineHeight = 20.sp
                 )

@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -41,26 +42,27 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.zIndex
+import java.util.concurrent.Executors
 
 // --- Synthetic Sound Generator for Ludo Classic Game ---
 object LudoSoundPlayer {
+    private val executor = Executors.newSingleThreadExecutor()
+
     fun playTone(frequency: Double, durationMs: Int, volume: Float = 0.5f) {
-        Thread {
+        executor.execute {
             try {
                 val sampleRate = 8000
                 val numSamples = (durationMs * sampleRate / 1000)
-                val sample = DoubleArray(numSamples)
                 val generatedSnd = ByteArray(2 * numSamples)
 
                 for (i in 0 until numSamples) {
-                    sample[i] = Math.sin(2 * Math.PI * i / (sampleRate / frequency))
-                }
-
-                var idx = 0
-                for (dVal in sample) {
-                    val valShort = (dVal * 32767).toInt().toShort()
-                    generatedSnd[idx++] = (valShort.toInt() and 0x00ff).toByte()
-                    generatedSnd[idx++] = ((valShort.toInt() and 0xff00) ushr 8).toByte()
+                    val angle = 2 * Math.PI * i / (sampleRate / frequency)
+                    val dVal = Math.sin(angle)
+                    val valShort = (dVal * 32767 * volume).toInt().toShort()
+                    generatedSnd[2 * i] = (valShort.toInt() and 0x00ff).toByte()
+                    generatedSnd[2 * i + 1] = ((valShort.toInt() and 0xff00) ushr 8).toByte()
                 }
 
                 val audioTrack = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
@@ -94,51 +96,40 @@ object LudoSoundPlayer {
                 }
 
                 audioTrack.write(generatedSnd, 0, generatedSnd.size)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                    audioTrack.setVolume(volume)
-                } else {
-                    @Suppress("DEPRECATION")
-                    audioTrack.setStereoVolume(volume, volume)
-                }
                 audioTrack.play()
-                Thread.sleep(durationMs.toLong() + 30)
+                Thread.sleep(durationMs.toLong() + 10)
+                audioTrack.stop()
                 audioTrack.release()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        }.start()
+        }
     }
 }
 
 object LudoSoundEffects {
-    // 1. Pawn Move Sound
+    // 1. Pawn Move Sound: Immediate, crisp hop tone
     fun playMove() {
-        LudoSoundPlayer.playTone(587.33, 80, 0.4f) // D5 note, short & punchy
+        LudoSoundPlayer.playTone(620.0, 50, 0.45f)
     }
 
     // 2. Capture Sound
     fun playCapture() {
-        Thread {
-            LudoSoundPlayer.playTone(440.0, 100, 0.5f) // A4
-            Thread.sleep(110)
-            LudoSoundPlayer.playTone(220.0, 220, 0.6f) // A3 (deep downward explosion)
-        }.start()
+        LudoSoundPlayer.playTone(440.0, 80, 0.5f)
+        LudoSoundPlayer.playTone(220.0, 160, 0.6f)
     }
 
     // 3. Entering the Center / Finished
     fun playFinish() {
-        Thread {
-            val notes = listOf(523.25, 659.25, 784.0, 1046.50) // C5, E5, G5, C6 arpeggio
-            for (note in notes) {
-                LudoSoundPlayer.playTone(note, 120, 0.5f)
-                Thread.sleep(130)
-            }
-        }.start()
+        val notes = listOf(523.25, 659.25, 784.0, 1046.50)
+        for (note in notes) {
+            LudoSoundPlayer.playTone(note, 80, 0.5f)
+        }
     }
 
     // 4. Dice Rolling Click
     fun playRollClick() {
-        LudoSoundPlayer.playTone(987.77, 25, 0.15f) // B5 note, very short and soft clicks
+        LudoSoundPlayer.playTone(987.77, 20, 0.15f)
     }
 }
 
@@ -216,16 +207,27 @@ fun LudoTournamentsScreen(
         }
     }
 
-    // Filter only Ludo tournaments
+    // Filter only active Ludo tournaments (not finished)
     val ludoTours = remember(tournaments) {
         tournaments.filter {
-            it.game.equals("Ludo", ignoreCase = true) ||
-                    it.game.lowercase().contains("ludo")
+            (it.game.equals("Ludo", ignoreCase = true) ||
+                    it.game.lowercase().contains("ludo")) &&
+                    !it.startTime.contains("[FINISHED]", ignoreCase = true)
         }
     }
 
     LaunchedEffect(Unit) {
         viewModel.refreshOnlineData()
+    }
+
+    BackHandler {
+        when {
+            selectedTournamentForReg != null -> selectedTournamentForReg = null
+            selectedTournamentForInfo != null -> selectedTournamentForInfo = null
+            matchingTournament != null -> matchingTournament = null
+            selectedTournamentForPlay != null -> selectedTournamentForPlay = null
+            else -> onBack()
+        }
     }
 
     if (selectedTournamentForPlay != null) {
@@ -351,6 +353,10 @@ fun LudoTournamentsScreen(
                             isAdmin = user?.isAdmin == true,
                             onRegister = { selectedTournamentForReg = tour },
                             onPlay = { 
+                                if (tour.startTime.contains("[FINISHED]", ignoreCase = true)) {
+                                    viewModel.showToast("This tournament has finished and is no longer available.")
+                                    return@LudoTournamentCard
+                                }
                                 if (tour.isJoined) {
                                     matchingTournament = tour
                                 } else {
@@ -778,6 +784,40 @@ fun LudoGameManager(
     var gameState by remember { mutableStateOf("playing") } // "playing", "finished"
     var finalScore by remember { mutableIntStateOf(0) }
     var userWonMatch by remember { mutableStateOf(false) }
+    var showExitConfirmDialog by remember { mutableStateOf(false) }
+
+    BackHandler {
+        if (gameState == "finished") {
+            onBack()
+        } else {
+            showExitConfirmDialog = true
+        }
+    }
+
+    if (showExitConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmDialog = false },
+            title = { Text("Quit Match?", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = { Text("Leaving the match will forfeit the game. Are you sure you want to exit?", color = Color.LightGray) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitConfirmDialog = false
+                        onBack()
+                    }
+                ) {
+                    Text("Leave", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirmDialog = false }) {
+                    Text("Stay", color = CyanGlow, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = CardBg,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 
     when (gameState) {
         "playing" -> {
@@ -1156,19 +1196,17 @@ fun LudoGamePlayScreen(
                 val pawn = pawns.first { it.id == chosenId }
                 val currentPawnPos = pawn.position
                 if (currentPawnPos == -1) {
-                    setPawnPosition(pawn.id, 0)
-                    p2Points += 1
                     actionBannerText = "${botName.uppercase()} MOVED GREEN PAWN OUT!"
                     LudoSoundEffects.playMove()
-                    delay(250)
+                    setPawnPosition(pawn.id, 0)
+                    p2Points += 1
+                    delay(260)
                 } else {
                     actionBannerText = "${botName.uppercase()} IS MOVING GREEN PAWN..."
                     var tempPos = currentPawnPos
                     for (step in 1..roll) {
                         if (tempPos + 1 <= 56) {
                             tempPos += 1
-                            setPawnPosition(pawn.id, tempPos)
-                            p2Points += 1
                             if (tempPos == 56) {
                                 p2Points += 100 // Finished bonus
                                 actionBannerText = "🏆 BOT GOT A PAWN HOME!"
@@ -1176,7 +1214,9 @@ fun LudoGamePlayScreen(
                             } else {
                                 LudoSoundEffects.playMove()
                             }
-                            delay(220)
+                            setPawnPosition(pawn.id, tempPos)
+                            p2Points += 1
+                            delay(240)
                         }
                     }
                 }
@@ -1213,7 +1253,7 @@ fun LudoGamePlayScreen(
     fun onUserPawnClicked(pawnId: Int) {
         if (currentTurn != 1 || !hasRolledThisTurn || !playablePawns.contains(pawnId) || isPawnMoving) return
 
-        isTimerActive = false // Stop the 8s timer
+        isTimerActive = false // Stop the 8s timer immediately
         isPawnMoving = true
 
         val pawn = pawns.first { it.id == pawnId }
@@ -1225,38 +1265,38 @@ fun LudoGamePlayScreen(
             try {
                 val currentPawnPos = pawn.position
                 if (currentPawnPos == -1) {
+                    actionBannerText = "MOVED BLUE PAWN OUT OF YARD!"
+                    LudoSoundEffects.playMove() // Sound and movement start at exact same instant
                     setPawnPosition(pawn.id, 0)
                     p1Points += 1
-                    actionBannerText = "MOVED BLUE PAWN OUT OF YARD!"
-                    LudoSoundEffects.playMove()
-                    delay(250)
+                    delay(260)
                 } else {
-                    actionBannerText = "MOVING BLUE PAWN..."
+                    actionBannerText = "HOPPING BLUE PAWN..."
                     var tempPos = currentPawnPos
                     for (step in 1..roll) {
                         if (tempPos + 1 <= 56) {
                             tempPos += 1
-                            setPawnPosition(pawn.id, tempPos)
-                            p1Points += 1
                             if (tempPos == 56) {
                                 p1Points += 100 // Finished bonus
                                 actionBannerText = "🎉 YOU GOT A BLUE PAWN HOME! +100 PTS"
                                 LudoSoundEffects.playFinish()
                             } else {
-                                LudoSoundEffects.playMove()
+                                LudoSoundEffects.playMove() // Sound and hop triggered simultaneously
                             }
-                            delay(220)
+                            setPawnPosition(pawn.id, tempPos)
+                            p1Points += 1
+                            delay(240) // Dedicated square-by-square hop timing
                         }
                     }
                 }
 
                 val finalPawn = pawns.first { it.id == pawnId }
                 val captured = checkCaptures(finalPawn)
-                delay(600)
+                delay(300)
 
                 // Check user win
                 if (pawns.filter { it.player == 1 }.all { it.position == 56 }) {
-                    delay(800)
+                    delay(600)
                     onGameFinished(p1Points, true)
                     return@launch
                 }
@@ -1274,6 +1314,8 @@ fun LudoGamePlayScreen(
                     hasRolledThisTurn = false
                     executeBotTurn()
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             } finally {
                 isPawnMoving = false
             }
@@ -1282,30 +1324,32 @@ fun LudoGamePlayScreen(
 
     // Roll dice click
     fun onUserRollClicked() {
-        if (currentTurn != 1 || isRolling || hasRolledThisTurn) return
+        if (currentTurn != 1 || isRolling || hasRolledThisTurn || isPawnMoving) return
 
         coroutineScope.launch {
             isRolling = true
+            playablePawns.clear()
             // Spin numbers
             repeat(8) {
                 diceValue = Random.nextInt(1, 7)
                 LudoSoundEffects.playRollClick()
-                delay(80)
+                delay(70)
             }
             isRolling = false
             hasRolledThisTurn = true
 
             val roll = diceValue
             val moves = getPlayablePawns(1, roll)
+            playablePawns.clear()
             if (moves.isEmpty()) {
                 actionBannerText = "ROLLED A $roll! NO MOVES."
-                delay(1200)
+                delay(1000)
                 currentTurn = 2
                 hasRolledThisTurn = false
                 executeBotTurn()
             } else {
-                actionBannerText = "ROLLED A $roll! CHOOSE BLUE PAWN TO MOVE."
                 playablePawns.addAll(moves)
+                actionBannerText = "ROLLED A $roll! TAP BLUE PAWN TO MOVE."
                 moveTimerSeconds = 8
                 isTimerActive = true
             }
@@ -1406,15 +1450,19 @@ fun LudoGamePlayScreen(
         Spacer(modifier = Modifier.weight(0.1f))
 
         // --- THE LUDO BOARD CANVAS ---
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .padding(8.dp)
                 .background(Color.White, RoundedCornerShape(12.dp))
                 .border(2.dp, LudoBorder, RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.TopStart
         ) {
+            val boardPx = constraints.maxWidth.toFloat()
+            val cellPx = boardPx / 15f
+            val density = LocalContext.current.resources.displayMetrics.density
+
             // Render the classic Ludo Board drawing Canvas
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val boardSize = size.minDimension
@@ -1563,11 +1611,32 @@ fun LudoGamePlayScreen(
                 drawLine(color = LudoBorder, start = Offset(cLeft, cRight), end = Offset(cRight, cLeft), strokeWidth = 2.dp.toPx())
             }
 
+            // Clickable shortcut for Blue Base Yard:
+            // When roll is 6 and yard pawns are available, tapping anywhere in the blue base yard triggers the move immediately!
+            val yardPawnsPlayable = playablePawns.filter { id -> pawns.firstOrNull { it.id == id && it.position == -1 } != null }
+            if (currentTurn == 1 && !isPawnMoving && yardPawnsPlayable.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .absoluteOffset(
+                            x = 0.dp,
+                            y = ((cellPx * 9f) / density).dp
+                        )
+                        .size(((cellPx * 6f) / density).dp)
+                        .zIndex(15f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            onUserPawnClicked(yardPawnsPlayable.first())
+                        }
+                )
+            }
+
             // Draw Pawns / Pins dynamically on top of the Canvas grid
             val sortedPawns = remember(pawns, playablePawns, currentTurn) {
                 pawns.sortedWith(compareBy<LudoPawn> { 
-                    playablePawns.contains(it.id) && currentTurn == 1
-                }.thenBy { it.player })
+                    if (playablePawns.contains(it.id) && currentTurn == 1) 1 else 0
+                }.thenBy { if (it.player == 1) 1 else 0 })
             }
 
             sortedPawns.forEach { pawn ->
@@ -1633,7 +1702,7 @@ fun LudoGamePlayScreen(
                         emptyList()
                     }
 
-                    val pawnSize = if (sharingPawns.size > 1) 16.dp else 24.dp
+                    val pawnSize = if (sharingPawns.size > 1) 18.dp else 26.dp
 
                     if (sharingPawns.size > 1) {
                         val idx = sharingPawns.indexOfFirst { it.id == pawn.id }
@@ -1665,15 +1734,15 @@ fun LudoGamePlayScreen(
                         }
                     }
 
-                    // Smooth sliding coordinates
+                    // Smooth hopping coordinates
                     val animatedCol by animateFloatAsState(
                         targetValue = col,
-                        animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 200, easing = LinearEasing),
                         label = "pawn_col"
                     )
                     val animatedRow by animateFloatAsState(
                         targetValue = row,
-                        animationSpec = tween(durationMillis = 180, easing = LinearOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 200, easing = LinearEasing),
                         label = "pawn_row"
                     )
 
@@ -1685,79 +1754,73 @@ fun LudoGamePlayScreen(
                             hopProgress.snapTo(0f)
                             hopProgress.animateTo(
                                 targetValue = 1f,
-                                animationSpec = tween(durationMillis = 150, easing = FastOutLinearInEasing)
+                                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
                             )
                         }
                     }
                     val hopFraction = hopProgress.value
-                    // Quadratic curve mapping: y = -h * 4 * x * (1 - x)
-                    val hopOffset = (-18).dp * (4f * hopFraction * (1f - hopFraction))
+                    // Parabolic arc: peak jump height of 20dp
+                    val hopOffset = (-20).dp * (4f * hopFraction * (1f - hopFraction))
 
                     // Draw interactive Pin marker Composable
                     val color = if (pawn.player == 1) LudoBlue else LudoGreen
                     val isPawnPlayable = playablePawns.contains(pawn.id) && currentTurn == 1 && !isPawnMoving
 
+                    // Breathe scale animation: active turn pawns breathe gently, currently playable pawns breathe prominently
+                    val infiniteTransition = rememberInfiniteTransition(label = "pawn_breathe")
+                    val scale by if (pawn.player == currentTurn) {
+                        infiniteTransition.animateFloat(
+                            initialValue = 1.0f,
+                            targetValue = if (isPawnPlayable) 1.25f else 1.15f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(if (isPawnPlayable) 800 else 1200, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "scale"
+                        )
+                    } else {
+                        remember { mutableStateOf(1.0f) }
+                    }
+
+                    val touchTargetRadiusPx = 24.dp.value * density
+
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .align(Alignment.Center)
+                            .absoluteOffset(
+                                x = ((animatedCol * cellPx - touchTargetRadiusPx) / density).dp,
+                                y = ((animatedRow * cellPx - touchTargetRadiusPx) / density).dp + hopOffset
+                            )
+                            .size(48.dp)
+                            .zIndex(if (isPawnPlayable) 25f else if (pawn.player == 1) 12f else 3f)
+                            .clickable(
+                                enabled = isPawnPlayable,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = false, radius = 24.dp)
+                            ) {
+                                onUserPawnClicked(pawn.id)
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val boardPx = constraints.maxWidth
-                            val cellPx = boardPx / 15f
-                            val xOffset = animatedCol * cellPx - cellPx / 2
-                            val yOffset = animatedRow * cellPx - cellPx / 2
-
-                            // Breathe scale animation: active turn pawns breathe gently, currently playable pawns breathe prominently
-                            val infiniteTransition = rememberInfiniteTransition(label = "pawn_breathe")
-                            val scale by if (pawn.player == currentTurn) {
-                                infiniteTransition.animateFloat(
-                                    initialValue = 1.0f,
-                                    targetValue = if (isPawnPlayable) 1.25f else 1.15f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(if (isPawnPlayable) 800 else 1200, easing = FastOutSlowInEasing),
-                                        repeatMode = RepeatMode.Reverse
-                                    ),
-                                    label = "scale"
+                        // 3D Pin Style Shape
+                        Box(
+                            modifier = Modifier
+                                .graphicsLayer(scaleX = scale, scaleY = scale)
+                                .size(pawnSize)
+                                .clip(CircleShape)
+                                .border(
+                                    width = if (isPawnPlayable) 2.5.dp else 1.dp,
+                                    color = if (isPawnPlayable) CyanGlow else Color.White,
+                                    shape = CircleShape
                                 )
-                            } else {
-                                remember { mutableStateOf(1.0f) }
-                            }
-
+                                .background(color, CircleShape)
+                                .padding(if (sharingPawns.size > 1) 2.dp else 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Box(
                                 modifier = Modifier
-                                    .absoluteOffset(
-                                        x = (xOffset / LocalContext.current.resources.displayMetrics.density).dp,
-                                        y = (yOffset / LocalContext.current.resources.displayMetrics.density).dp + hopOffset
-                                    )
-                                    .size((cellPx / LocalContext.current.resources.displayMetrics.density).dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                // 3D Pin Style Shape
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer(scaleX = scale, scaleY = scale)
-                                        .size(pawnSize)
-                                        .clip(CircleShape)
-                                        .clickable(enabled = isPawnPlayable) {
-                                            onUserPawnClicked(pawn.id)
-                                        }
-                                        .border(
-                                            width = if (isPawnPlayable) 2.dp else 1.dp,
-                                            color = if (isPawnPlayable) CyanGlow else Color.White,
-                                            shape = CircleShape
-                                        )
-                                        .background(color, CircleShape)
-                                        .padding(if (sharingPawns.size > 1) 2.dp else 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(pawnSize * 0.33f)
-                                            .background(Color.White, CircleShape)
-                                    )
-                                }
-                            }
+                                    .size(pawnSize * 0.33f)
+                                    .background(Color.White, CircleShape)
+                            )
                         }
                     }
                 }
@@ -1880,8 +1943,14 @@ fun LudoGamePlayScreen(
                             )
                         )
                         .border(2.dp, if (currentTurn == 1 && !hasRolledThisTurn && !isPawnMoving) CyanGlow else BorderColor, RoundedCornerShape(12.dp))
-                        .clickable(enabled = currentTurn == 1 && !hasRolledThisTurn && !isRolling && !isPawnMoving) {
-                            onUserRollClicked()
+                        .clickable(enabled = currentTurn == 1 && !isRolling && !isPawnMoving) {
+                            if (!hasRolledThisTurn) {
+                                onUserRollClicked()
+                            } else if (playablePawns.isNotEmpty()) {
+                                if (playablePawns.size == 1) {
+                                    onUserPawnClicked(playablePawns.first())
+                                }
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {

@@ -1,0 +1,30 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Blue Circle -->
+    <path
+        android:pathData="M12,0 C5.373,0 0,5.373 0,12 s5.373,12 12,12 12,-5.373 12,-12 S18.627,0 12,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="12"
+                android:startY="0"
+                android:endX="12"
+                android:endY="24"
+                android:type="linear">
+                <item android:offset="0" android:color="#2AABEE" />
+                <item android:offset="1" android:color="#229ED9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Paper Airplane Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.39,11.85 l12.13,-4.68 c0.56,-0.2 1.05,0.14 0.87,0.98 l-2.07,9.75 c-0.15,0.7 -0.57,0.87 -1.16,0.54 l-3.16,-2.33 l-1.52,1.47 c-0.17,0.17 -0.31,0.31 -0.63,0.31 l0.23,-3.21 l5.84,-5.28 c0.25,-0.23 -0.06,-0.35 -0.38,-0.14 l-7.22,4.55 l-3.11,-0.97 c-0.68,-0.21 -0.69,-0.68 0.14,-1 Z" />
+    <!-- Paper Airplane Fold Shading -->
+    <path
+        android:fillColor="#C8DAEA"
+        android:pathData="M9.85,17.89 l0.23,-3.21 l1.92,1.43 l-1.52,1.47 c-0.17,0.17 -0.31,0.31 -0.63,0.31 Z" />
+</vector>

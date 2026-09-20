@@ -154,6 +154,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val database = AppDatabase.getDatabase(application)
         repository = AppRepository(database.appDao())
 
+        // Load cached global settings and casino games so UI never reverts to defaults
+        val cachedSettings = loadCachedGlobalSettings()
+        _globalSettings.value = cachedSettings
+        _dynamicUpiId.value = cachedSettings.upiId
+        val cachedGames = loadCachedCasinoGames()
+        if (cachedGames.isNotEmpty()) {
+            _casinoGames.value = cachedGames
+        }
+
         loggedInUser = repository.loggedInUserFlow.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -270,11 +279,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val settings = repository.getGlobalSettings()
                 _dynamicUpiId.value = settings.upiId
                 _globalSettings.value = settings
+                saveCachedGlobalSettings(settings)
 
                 // Fetch dynamic casino games
                 try {
                     val games = repository.getCasinoGames()
-                    _casinoGames.value = games
+                    if (games.isNotEmpty()) {
+                        _casinoGames.value = games
+                        saveCachedCasinoGames(games)
+                    }
                 } catch (e: Exception) {
                     Log.e("MainViewModel", "refreshOnlineData load casino games error", e)
                 }
@@ -485,14 +498,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun loadCachedGlobalSettings(): com.example.data.GlobalSettings {
+        return try {
+            val prefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
+            val upi = prefs.getString("cached_upi_id", "pay.arenaesports@upi") ?: "pay.arenaesports@upi"
+            val wa = prefs.getString("cached_wa_url", "https://wa.me/919999999999") ?: "https://wa.me/919999999999"
+            val tg = prefs.getString("cached_tg_url", "https://t.me/arenaesportssupport") ?: "https://t.me/arenaesportssupport"
+            val refReward = prefs.getFloat("cached_referral_reward", 50f).toDouble()
+            val refMinDep = prefs.getFloat("cached_referral_min_deposit", 20f).toDouble()
+            val rtp = prefs.getFloat("cached_mines_house_edge", 97f).toDouble()
+            com.example.data.GlobalSettings(
+                upiId = upi,
+                waUrl = wa,
+                tgUrl = tg,
+                referralReward = refReward,
+                referralMinDeposit = refMinDep,
+                minesHouseEdge = rtp
+            )
+        } catch (e: Exception) {
+            com.example.data.GlobalSettings()
+        }
+    }
+
+    private fun saveCachedGlobalSettings(settings: com.example.data.GlobalSettings) {
+        try {
+            val prefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("cached_upi_id", settings.upiId)
+                .putString("cached_wa_url", settings.waUrl)
+                .putString("cached_tg_url", settings.tgUrl)
+                .putFloat("cached_referral_reward", settings.referralReward.toFloat())
+                .putFloat("cached_referral_min_deposit", settings.referralMinDeposit.toFloat())
+                .putFloat("cached_mines_house_edge", settings.minesHouseEdge.toFloat())
+                .apply()
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "saveCachedGlobalSettings error", e)
+        }
+    }
+
+    private fun loadCachedCasinoGames(): List<com.example.data.CasinoGame> {
+        return try {
+            val prefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
+            val ludoPoster = prefs.getString("cached_ludo_poster", null) ?: "https://images.unsplash.com/photo-1611195974226-a6a9be9dd763?auto=format&fit=crop&w=600&q=80"
+            val ludoName = prefs.getString("cached_ludo_name", "Ludo Classic") ?: "Ludo Classic"
+            val minesPoster = prefs.getString("cached_mines_poster", null) ?: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80"
+            val minesName = prefs.getString("cached_mines_name", "Mines Sweeper") ?: "Mines Sweeper"
+            listOf(
+                com.example.data.CasinoGame(id = 1, name = ludoName, posterUrl = ludoPoster, isActive = true),
+                com.example.data.CasinoGame(id = 2, name = minesName, posterUrl = minesPoster, isActive = true)
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveCachedCasinoGames(games: List<com.example.data.CasinoGame>) {
+        try {
+            val prefs = getApplication<Application>().getSharedPreferences("arena_esports_prefs", android.content.Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            games.firstOrNull { it.name.lowercase().contains("ludo") }?.let {
+                if (!it.posterUrl.isNullOrBlank()) editor.putString("cached_ludo_poster", it.posterUrl)
+                editor.putString("cached_ludo_name", it.name)
+            }
+            games.firstOrNull { it.name.lowercase().contains("mines") }?.let {
+                if (!it.posterUrl.isNullOrBlank()) editor.putString("cached_mines_poster", it.posterUrl)
+                editor.putString("cached_mines_name", it.name)
+            }
+            editor.apply()
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "saveCachedCasinoGames error", e)
+        }
+    }
+
     fun adminUpdateSettings(upiId: String?, waUrl: String?, tgUrl: String?, referralReward: Double?, referralMinDeposit: Double?, minesHouseEdge: Double?) {
         viewModelScope.launch {
+            // Optimistically update local state immediately
+            val current = _globalSettings.value
+            val updated = current.copy(
+                upiId = upiId ?: current.upiId,
+                waUrl = waUrl ?: current.waUrl,
+                tgUrl = tgUrl ?: current.tgUrl,
+                referralReward = referralReward ?: current.referralReward,
+                referralMinDeposit = referralMinDeposit ?: current.referralMinDeposit,
+                minesHouseEdge = minesHouseEdge ?: current.minesHouseEdge
+            )
+            _globalSettings.value = updated
+            _dynamicUpiId.value = updated.upiId
+            saveCachedGlobalSettings(updated)
+
             val ok = repository.updateGlobalSettings(upiId, waUrl, tgUrl, referralReward, referralMinDeposit, minesHouseEdge)
             if (ok) {
                 _toastMessage.value = "Settings updated!"
                 refreshOnlineData()
             } else {
-                _toastMessage.value = "Failed to update settings"
+                _toastMessage.value = "Failed to update settings on server"
             }
         }
     }
@@ -501,7 +600,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val games = repository.getCasinoGames()
-                _casinoGames.value = games
+                if (games.isNotEmpty()) {
+                    _casinoGames.value = games
+                    saveCachedCasinoGames(games)
+                }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "loadCasinoGames error", e)
             }
@@ -510,12 +612,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun adminUpdateCasinoGame(id: Int?, name: String, posterUrl: String?, isActive: Boolean?) {
         viewModelScope.launch {
+            // Optimistically update local state immediately so UI changes without delay
+            val current = _casinoGames.value.toMutableList()
+            val targetIdx = current.indexOfFirst { it.id == id || (id == null && it.name.equals(name, ignoreCase = true)) }
+            if (targetIdx != -1) {
+                val existing = current[targetIdx]
+                current[targetIdx] = existing.copy(
+                    name = name,
+                    posterUrl = posterUrl ?: existing.posterUrl,
+                    isActive = isActive ?: existing.isActive
+                )
+                _casinoGames.value = current
+                saveCachedCasinoGames(current)
+            } else {
+                val newGame = com.example.data.CasinoGame(
+                    id = id ?: (current.size + 1),
+                    name = name,
+                    posterUrl = posterUrl ?: "",
+                    isActive = isActive ?: true
+                )
+                current.add(newGame)
+                _casinoGames.value = current
+                saveCachedCasinoGames(current)
+            }
+
             val ok = repository.updateCasinoGame(id, name, posterUrl, isActive)
             if (ok) {
                 _toastMessage.value = "Casino game updated!"
                 loadCasinoGames()
             } else {
-                _toastMessage.value = "Failed to update casino game"
+                _toastMessage.value = "Failed to update casino game on server"
             }
         }
     }
@@ -757,13 +883,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Declare position and Reward
-    fun adminDeclarePositionAndReward(registrationId: Int, position: String, prizeAmount: Double, rawWhatsapp: String, tournamentTitle: String) {
+    fun adminDeclarePositionAndReward(registrationId: Int, position: String, prizeAmount: Double, rawWhatsapp: String, tournamentTitle: String, tournamentId: Int? = null) {
         viewModelScope.launch {
             _isRefreshing.value = true
             val ok = repository.declarePositionAndReward(registrationId, position, prizeAmount, rawWhatsapp, tournamentTitle)
             _isRefreshing.value = false
             if (ok) {
                 _toastMessage.value = "Declared Position $position. Reward of ₹$prizeAmount awarded!"
+                // User requirement: Delete the tournament when result has been declared
+                if (tournamentId != null) {
+                    try {
+                        repository.deleteTournament(tournamentId)
+                        _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error deleting tournament after result declaration", e)
+                    }
+                }
                 refreshOnlineData()
             } else {
                 _toastMessage.value = "Failed to award reward."
@@ -834,7 +969,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val ok = repository.finishTournament(id)
             _isRefreshing.value = false
             if (ok) {
-                _toastMessage.value = "Tournament finished successfully!"
+                // User requirement: Delete the tournament when finished so nobody can register or play it
+                try {
+                    repository.deleteTournament(id)
+                    _allTournaments.value = _allTournaments.value.filter { it.id != id }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Error deleting tournament after finish", e)
+                }
+                _toastMessage.value = "Tournament finished and deleted successfully!"
                 refreshOnlineData()
             } else {
                 _toastMessage.value = "Failed to finish tournament."
@@ -1168,14 +1310,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         _toastMessage.value = "Ludo match completed successfully! Score: $score"
                     }
-                    refreshOnlineData()
-                    onComplete(prizeAwarded)
                 } else {
-                    _toastMessage.value = "Failed to synchronize game result with server."
-                    onComplete(0.0)
+                    _toastMessage.value = "Game completed! Score: $score"
                 }
+
+                // USER REQUIREMENT:
+                // Delete the tournament when that tournament has been finished / result declared,
+                // so nobody can register that tournament and registered players cannot play it again.
+                try {
+                    repository.deleteTournament(tournamentId)
+                    _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Error deleting tournament after finish", e)
+                }
+
+                refreshOnlineData(silent = true)
+                onComplete(prizeAwarded ?: 0.0)
             } catch (e: Exception) {
                 _toastMessage.value = "Error completing ludo game: ${e.message}"
+                // Ensure local list also removes the finished tournament
+                _allTournaments.value = _allTournaments.value.filter { it.id != tournamentId }
                 onComplete(0.0)
             }
         }

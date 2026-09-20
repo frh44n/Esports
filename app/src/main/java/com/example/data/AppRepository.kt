@@ -207,6 +207,11 @@ class AppRepository(private val appDao: AppDao) {
     }
 
     suspend fun deleteTournament(id: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            appDao.deleteTournamentById(id)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         SupabaseClient.deleteTournament(id)
     }
 

@@ -1024,7 +1024,7 @@ object SupabaseClient {
             .post(requestBody)
             .build()
 
-        return try {
+        val directResult = try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
                 Log.d(TAG, "uploadPhoto direct response code: ${response.code}, body: $bodyStr")
@@ -1038,6 +1038,25 @@ object SupabaseClient {
         } catch (e: Exception) {
             Log.e(TAG, "uploadPhoto direct error", e)
             Result.failure(e)
+        }
+
+        if (directResult.isSuccess) {
+            return directResult
+        }
+
+        // Direct upload failed (e.g. missing service key or RLS policy) - fallback to backend server /api/upload
+        Log.i(TAG, "Attempting server fallback upload for $filename...")
+        return try {
+            val serverUrl = uploadImage(base64Image, filename, mimeType)
+            if (!serverUrl.isNullOrBlank()) {
+                Log.i(TAG, "Server fallback upload succeeded: $serverUrl")
+                Result.success(serverUrl)
+            } else {
+                directResult
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Server fallback upload exception", e)
+            directResult
         }
     }
 
